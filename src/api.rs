@@ -1,4 +1,4 @@
-use actix_web::{HttpServer, App, Responder, web};
+use actix_web::{HttpServer, App, Responder, web, HttpRequest};
 use bytes::BytesMut;
 use futures_util::stream::StreamExt;
 use crate::internal::*;
@@ -33,11 +33,22 @@ impl ApiServer {
         .await
     }
     
-    async fn index(_data: web::Data<DB>) -> impl Responder {
+    async fn index(req: HttpRequest, _data: web::Data<DB>) -> impl Responder {
+        let info = req.connection_info();
+        let method = req.method().as_str();
+        let reqpath = req.path();
+        let host = info.host();
+        log::debug!(target: "mango_chainsaw", "[{method}] {host}{reqpath}");
         "Hello"
     }
 
-    async fn insert(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>, mut payload: web::Payload) -> actix_web::Result<impl Responder> {
+    async fn insert(req: HttpRequest, data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>, mut payload: web::Payload) -> actix_web::Result<impl Responder> {
+        let info = req.connection_info();
+        let method = req.method().as_str();
+        let reqpath = req.path();
+        let host = info.host();
+        log::debug!(target: "mango_chainsaw", "[{method}] {host}{reqpath}");
+
         let namespace = path.into_inner();
         let labels = query.into_inner();
 
@@ -52,7 +63,13 @@ impl ApiServer {
         Ok(format!("{id}"))
     }
 
-    async fn get(data: web::Data<DB>, path: web::Path<(String, u64)>) -> actix_web::Result<impl Responder> {
+    async fn get(req: HttpRequest, data: web::Data<DB>, path: web::Path<(String, u64)>) -> actix_web::Result<impl Responder> {
+        let info = req.connection_info();
+        let method = req.method().as_str();
+        let reqpath = req.path();
+        let host = info.host();
+        log::debug!(target: "mango_chainsaw", "[{method}] {host}{reqpath}");
+
         let (namespace, id) = path.into_inner();
         let namespace = data.open_namespace(&namespace).map_err(|e| actix_web::error::ErrorBadRequest(e))?;
         let blob = namespace.get(id).map_err(|e| actix_web::error::ErrorServiceUnavailable(e))?;
@@ -62,7 +79,13 @@ impl ApiServer {
         }
     }
 
-    async fn query(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>) -> actix_web::Result<impl Responder> {
+    async fn query(req: HttpRequest, data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>) -> actix_web::Result<impl Responder> {
+        let info = req.connection_info();
+        let method = req.method().as_str();
+        let reqpath = req.path();
+        let host = info.host();
+        log::debug!(target: "mango_chainsaw", "[{method}] {host}{reqpath}");
+
         let namespace = path.into_inner();
         let labels = query.into_inner();
         let namespace = data.open_namespace(&namespace).map_err(|e| actix_web::error::ErrorBadRequest(e))?;
@@ -71,7 +94,13 @@ impl ApiServer {
         Ok(web::Json(results))
     }
 
-    async fn delete(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<u64>>) -> actix_web::Result<impl Responder> {
+    async fn delete(req: HttpRequest, data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<u64>>) -> actix_web::Result<impl Responder> {
+        let info = req.connection_info();
+        let method = req.method().as_str();
+        let reqpath = req.path();
+        let host = info.host();
+        log::debug!(target: "mango_chainsaw", "[{method}] {host}{reqpath}");
+
         let namespace = path.into_inner();
         let ids = query.into_inner();
         let namespace = data.open_namespace(&namespace).map_err(|e| actix_web::error::ErrorBadRequest(e))?;

@@ -36,9 +36,9 @@ impl Namespace {
         let name = &self.name;
         for tree in ["blobs", "labels"] {
             match db.inner.drop_tree(format!("{name}_{tree}")) {
-                Ok(_) => log::debug!(target: "mango_chainsaw", "dropped tree {name}_{tree}"),
+                Ok(_) => log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}", self.name),
                 Err(e) => {
-                    log::error!(target: "mango_chainsaw", "failed to drop tree {name}_{tree} {e}");
+                    log::error!(target: "mango_chainsaw", "[{}] failed to drop tree {name}_{tree} {e}", self.name);
                     return Err(e.into());
                 }
             }
@@ -55,18 +55,18 @@ impl Namespace {
             hasher.finish()
         };
         match self.blobs.insert(bincode::serialize(&hash)?, blob.to_vec()) {
-            Ok(_) => log::trace!(target: "mango_chainsaw", "inserted object with hash {hash}"),
+            Ok(_) => log::trace!(target: "mango_chainsaw", "[{}] inserted object with hash {hash}", self.name),
             Err(e) => {
-                log::error!(target: "mango_chainsaw", "failed to insert object with hash {hash}: {e}");
+                log::error!(target: "mango_chainsaw", "[{}] failed to insert object with hash {hash}: {e}", self.name);
                 return Err(e.into());
             }
         }
 
         for label in labels {
             match self.upsert_label(&label, hash) {
-                Ok(_) => log::trace!(target: "mango_chainsaw", "upserted label {label}"),
+                Ok(_) => log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name),
                 Err(e) => {
-                    log::error!(target: "mango_chainsaw", "failed to upsert label {label}: {e}");
+                    log::error!(target: "mango_chainsaw", "[{}] failed to upsert label {label}: {e}", self.name);
                     return Err(e);
                 }
             }
@@ -81,11 +81,11 @@ impl Namespace {
                 Some(bytes) => {
                     let mut hashes: Vec<u64> = match bincode::deserialize::<Vec<u64>>(bytes) {
                         Ok(h) => {
-                            log::trace!(target: "mango_chainsaw", "got {} hashes for label {label}", h.len());
+                            log::trace!(target: "mango_chainsaw", "[{}] got {} hashes for label {label}", self.name, h.len());
                             h
                         }
                         Err(e) => {
-                            log::error!(target: "mango_chainsaw", "failed to upsert label {label}: {e}");
+                            log::error!(target: "mango_chainsaw", "[{}] failed to upsert label {label}: {e}", self.name);
                             vec![]
                         }
                     };
@@ -116,7 +116,7 @@ impl Namespace {
             Ok(Some(blob)) => Ok(Some(Bytes::from(blob.to_vec()))),
             Ok(None) => Ok(None),
             Err(e) => {
-                log::error!(target: "mango_chainsaw", "error getting id={id}: {e}");
+                log::error!(target: "mango_chainsaw", "[{}] error getting id={id}: {e}", self.name);
                 return Err(e.into())
             },
         }
@@ -130,22 +130,22 @@ impl Namespace {
                 Ok(Some(bytes)) => {
                     let hashes: Vec<u64> = match bincode::deserialize::<Vec<u64>>(&bytes) {
                         Ok(h) => {
-                            log::debug!(target: "mango_chainsaw", "found {} matches for {label}", h.len());
+                            log::debug!(target: "mango_chainsaw", "[{}] found {} matches for {label}", self.name, h.len());
                             h
                         },
                         Err(e) => {
-                            log::error!(target: "mango_chainsaw", "failed to deserialize bytes for label {label}: {e}");
+                            log::error!(target: "mango_chainsaw", "[{}] failed to deserialize bytes for label {label}: {e}", self.name);
                             vec![]
                         },
                     };
                     hashes
                 },
                 Ok(None) => {
-                    log::debug!(target: "mango_chainsaw", "found no matches for {label}");
+                    log::debug!(target: "mango_chainsaw", "[{}] found no matches for {label}", self.name);
                     vec![]
                 },
                 Err(e) => {
-                    log::error!(target: "mango_chainsaw", "failed to get {label}: {e}");
+                    log::error!(target: "mango_chainsaw", "[{}] failed to get {label}: {e}", self.name);
                     vec![]
                 },
             }.into_par_iter().collect::<HashSet<u64>>()
@@ -165,10 +165,10 @@ impl Namespace {
         for id in ids {
             match self.blobs.remove(bincode::serialize(&id)?) {
                 Ok(_) => {
-                    log::debug!(target: "mango_chainsaw", "removed blob {id}");
+                    log::debug!(target: "mango_chainsaw", "[{}] removed blob {id}", self.name);
                 },
                 Err(e) => {
-                    log::error!(target: "mango_chainsaw", "failed to remove blob {id}: {e}");
+                    log::error!(target: "mango_chainsaw", "[{}] failed to remove blob {id}: {e}", self.name);
                     return Err(e.into())
                 },
             }
@@ -176,24 +176,24 @@ impl Namespace {
         Ok(())
     }
 
-    /// WIP
-    pub fn prune(&self) -> Result<()> {
-        log::info!(target: "mango_chainsaw", "starting prune on namespace {}", self.name);
-        let ids: Vec<u64> = self.blobs.into_iter().keys().map(|key| match key {
-            Ok(k) => match bincode::deserialize::<u64>(&k) {
-                Ok(id) => id,
-                Err(e) => {
-                    log::error!(target: "mango_chainsaw", "error deserializing key during prune {e}");
-                    0
-                }
-            },
-            Err(e) => {
-                log::error!(target: "mango_chainsaw", "error pruning {e}");
-                0
-            }
-        }).filter(|id| id != &0).collect();
-        log::info!(target: "mango_chainsaw", "found {} blobs stored in namespace {}", ids.len(), self.name);
+    // WIP
+    // pub fn prune(&self) -> Result<()> {
+    //     log::info!(target: "mango_chainsaw", "starting prune on namespace {}", self.name);
+    //     let ids: Vec<u64> = self.blobs.into_iter().keys().map(|key| match key {
+    //         Ok(k) => match bincode::deserialize::<u64>(&k) {
+    //             Ok(id) => id,
+    //             Err(e) => {
+    //                 log::error!(target: "mango_chainsaw", "[{}] error deserializing key during prune {e}", self.name);
+    //                 0
+    //             }
+    //         },
+    //         Err(e) => {
+    //             log::error!(target: "mango_chainsaw", "[{}] error pruning {e}", self.name);
+    //             0
+    //         }
+    //     }).filter(|id| id != &0).collect();
+    //     log::info!(target: "mango_chainsaw", "[{}] found {} stored blobs", ids.len(), self.name);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
