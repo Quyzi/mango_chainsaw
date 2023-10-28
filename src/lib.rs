@@ -14,3 +14,8 @@ pub(crate) mod internal {
     pub use crate::namespace::Namespace;
     pub use crate::api::*;
 }
+
+pub mod prelude {
+    pub use crate::db::DB;
+    pub use crate::errors::MangoChainsawError;
+}

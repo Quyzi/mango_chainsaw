@@ -25,6 +25,12 @@ impl Label {
     }
 
     pub(crate) fn key(&self) -> Vec<u8> {
-        bincode::serialize(&format!("{}={}", &self.name, &self.value)).unwrap()
+        match bincode::serialize(&format!("{}={}", &self.name, &self.value)) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "failed to serialize key for {self}: {e}");
+                vec![]
+            },
+        }
     }
 }
