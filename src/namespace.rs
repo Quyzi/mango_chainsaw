@@ -110,8 +110,20 @@ impl Namespace {
         Ok(())
     }
 
+    /// Get an object by ID
+    pub fn get(&self, id: u64) -> Result<Option<Bytes>> {
+        match self.blobs.get(bincode::serialize(&id)?) {
+            Ok(Some(blob)) => Ok(Some(Bytes::from(blob.to_vec()))),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "error getting id={id}: {e}");
+                return Err(e.into())
+            },
+        }
+    }
+
     /// Get all objects matching the given labels
-    pub fn get_all(&self, labels: Vec<Label>) -> Result<Vec<u64>> {
+    pub fn query(&self, labels: Vec<Label>) -> Result<Vec<u64>> {
         let mut sets: Vec<HashSet<u64>> = labels.par_iter().map(|label| {
             let labels = self.labels.clone();
             match labels.get(label.key()) {

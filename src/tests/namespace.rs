@@ -19,12 +19,7 @@ pub(crate) fn test_new_namespace() -> Result<()> {
         ColorChoice::Auto,
     )]);
 
-    let config = {
-        let mut config = Config::default();
-        config.db_path = temp.path().into();
-        config
-    };
-    let db = DB::new(config)?;
+    let db = DB::new(&temp.path().to_path_buf())?;
     let testing = (&db).open_namespace("testing")?;
     for n in 0..50 {
         let object = Bytes::from(format!("n={:#?}", n));
@@ -37,9 +32,11 @@ pub(crate) fn test_new_namespace() -> Result<()> {
         }
         if n % 10 == 0 && n > 0 {
             labels.push(Label::new("test", "13"));
+            labels.push(Label::new("name", "Doggo"));
         }
         if n == 42 {
             labels.push(Label::new("name", "Pugsly"));
+            labels.push(Label::new("name", "Doggo"));
             let mut hasher = DefaultHasher::new();
             object.hash(&mut hasher);
             log::info!(target: "mango_chainsaw", "Pugsly is hash {}", hasher.finish());
@@ -47,10 +44,10 @@ pub(crate) fn test_new_namespace() -> Result<()> {
         testing.insert(object, labels)?;
     }
 
-    let ids = testing.get_all(vec![
+    let ids = testing.query(vec![
         Label::new("animal", "dog"),
         // Label::new("test", "13"),
-        Label::new("name", "Pugsly"),
+        Label::new("name", "Doggo"),
     ])?;
     log::info!(target: "mango_chainsaw", "found ids: {ids:#?}");
 

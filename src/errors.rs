@@ -1,3 +1,4 @@
+use actix_web::error::PayloadError;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, MangoChainsawError>;
@@ -12,4 +13,10 @@ pub enum MangoChainsawError {
 
     #[error("IO Error: {0}")]
     IO(#[from] std::io::Error),
+
+    #[error("Payload Error: {0}")]
+    Payload(#[from] PayloadError),
+
+    #[error("Actix Error: {0}")]
+    Actix(#[from] actix_web::Error),
 }

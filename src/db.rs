@@ -1,16 +1,16 @@
+use std::path::PathBuf;
 use crate::internal::*;
 
 #[derive(Clone, Debug)]
 pub struct DB {
     pub(crate) inner: sled::Db,
-    pub(crate) config: Config,
 }
 
 impl DB {
-    pub fn new(config: Config) -> Result<Self> {
-        let inner = sled::open(&config.db_path)?;
-        log::trace!(target: "mango_chainsaw", "opening sled on {:?}", &config.db_path);
-        Ok(Self { inner, config })
+    pub fn new(path: &PathBuf) -> Result<Self> {
+        let inner = sled::open(path)?;
+        log::trace!(target: "mango_chainsaw", "opening sled on {:?}", path);
+        Ok(Self { inner })
     }
 
     pub fn open_namespace(&self, name: &str) -> Result<Namespace> {
@@ -21,6 +21,13 @@ impl DB {
     pub fn drop_namespace(&self, namespace: Namespace) -> Result<()> {
         log::warn!(target: "mango_chainsaw", "dropping namespace {}", namespace.name);
         namespace.drop(self)?;
+        Ok(())
+    }
+
+    pub async fn start_server(&self, address: String, port: u16) -> Result<()> {
+        let server = ApiServer::new(self.clone(), address, port);
+
+        server.run().await?;
         Ok(())
     }
 }
