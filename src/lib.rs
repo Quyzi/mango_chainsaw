@@ -2,8 +2,10 @@ pub mod db;
 pub mod errors;
 pub mod label;
 pub mod namespace;
-mod tests;
 pub mod api;
+
+#[cfg(test)]
+mod tests;
 
 pub(crate) mod internal {
     pub use crate::errors::MangoChainsawError;

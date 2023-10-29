@@ -1,15 +1,16 @@
-use actix_web::{HttpServer, App, Responder, web, HttpRequest};
+use actix_web::{HttpServer, App, Responder, web, HttpRequest, middleware::Logger};
 use bytes::BytesMut;
 use futures_util::stream::StreamExt;
 use crate::internal::*;
 
-pub struct ApiServer {
+pub struct ApiServerV1 {
     address: String, 
     port: u16,
     db: DB,
 }
 
-impl ApiServer {
+#[deprecated]
+impl ApiServerV1 {
     pub fn new(db: DB, address: String, port: u16) -> Self {
         Self {
             address, db, port, 
@@ -21,6 +22,7 @@ impl ApiServer {
         HttpServer::new(move || {
             let db = this.clone();
             App::new()
+            .wrap(Logger::default())
             .app_data(web::Data::new(db))
             .route("/", web::to(Self::index))
             .route("/api/v1/{namespace}/insert", web::to(Self::insert))
@@ -28,6 +30,7 @@ impl ApiServer {
             .route("/api/v1/{namespace}/get/{id}", web::to(Self::get))
             .route("/api/v1/{namespace}/delete/{id}", web::to(Self::delete))
         })
+        .workers(8)
         .bind((self.address.to_string(), self.port))?
         .run()
         .await

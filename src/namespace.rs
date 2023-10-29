@@ -1,6 +1,7 @@
 use crate::internal::*;
 use bytes::Bytes;
 use rayon::prelude::*;
+use serde_derive::{Serialize, Deserialize};
 use sled::Tree;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
@@ -23,8 +24,8 @@ pub struct Namespace {
 
 impl Namespace {
     pub(crate) fn new(db: &DB, name: &str) -> Result<Self> {
-        let blobs = db.inner.open_tree(format!("{name}_blobs"))?;
-        let labels = db.inner.open_tree(format!("{name}_labels"))?;
+        let blobs = db.inner.open_tree( bincode::serialize(&format!("{name}_blobs"))?)?;
+        let labels = db.inner.open_tree(bincode::serialize(&format!("{name}_labels"))?)?;
         Ok(Self {
             name: name.to_string(),
             blobs,
@@ -176,6 +177,19 @@ impl Namespace {
         Ok(())
     }
 
+    /// Get namespace stats
+    pub fn stats(&self) -> Result<NamespaceStats> {
+        let prefix = format!("{}", &self.name);
+        let stats = NamespaceStats {
+            name: self.name.to_string(),
+            blob_checksum: self.blobs.checksum()?,
+            labels_checksum: self.labels.checksum()?,
+            blobs_count: self.blobs.len(),
+            labels_count: self.labels.len(),
+        };
+        Ok(stats)
+    }
+
     // WIP
     // pub fn prune(&self) -> Result<()> {
     //     log::info!(target: "mango_chainsaw", "starting prune on namespace {}", self.name);
@@ -196,4 +210,13 @@ impl Namespace {
 
     //     Ok(())
     // }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct NamespaceStats {
+    pub name: String,
+    pub blob_checksum: u32,
+    pub labels_checksum: u32,
+    pub blobs_count: usize,
+    pub labels_count: usize,
 }
