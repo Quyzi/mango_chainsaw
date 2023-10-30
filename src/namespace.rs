@@ -1,7 +1,7 @@
 use crate::internal::*;
 use bytes::Bytes;
 use rayon::prelude::*;
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 use sled::Tree;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
@@ -24,8 +24,12 @@ pub struct Namespace {
 
 impl Namespace {
     pub(crate) fn new(db: &DB, name: &str) -> Result<Self> {
-        let blobs = db.inner.open_tree( bincode::serialize(&format!("{name}_blobs"))?)?;
-        let labels = db.inner.open_tree(bincode::serialize(&format!("{name}_labels"))?)?;
+        let blobs = db
+            .inner
+            .open_tree(bincode::serialize(&format!("{name}_blobs"))?)?;
+        let labels = db
+            .inner
+            .open_tree(bincode::serialize(&format!("{name}_labels"))?)?;
         Ok(Self {
             name: name.to_string(),
             blobs,
@@ -37,7 +41,9 @@ impl Namespace {
         let name = &self.name;
         for tree in ["blobs", "labels"] {
             match db.inner.drop_tree(format!("{name}_{tree}")) {
-                Ok(_) => log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}", self.name),
+                Ok(_) => {
+                    log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}", self.name)
+                }
                 Err(e) => {
                     log::error!(target: "mango_chainsaw", "[{}] failed to drop tree {name}_{tree} {e}", self.name);
                     return Err(e.into());
@@ -56,7 +62,9 @@ impl Namespace {
             hasher.finish()
         };
         match self.blobs.insert(bincode::serialize(&hash)?, blob.to_vec()) {
-            Ok(_) => log::trace!(target: "mango_chainsaw", "[{}] inserted object with hash {hash}", self.name),
+            Ok(_) => {
+                log::trace!(target: "mango_chainsaw", "[{}] inserted object with hash {hash}", self.name)
+            }
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "[{}] failed to insert object with hash {hash}: {e}", self.name);
                 return Err(e.into());
@@ -65,7 +73,9 @@ impl Namespace {
 
         for label in labels {
             match self.upsert_label(&label, hash) {
-                Ok(_) => log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name),
+                Ok(_) => {
+                    log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name)
+                }
                 Err(e) => {
                     log::error!(target: "mango_chainsaw", "[{}] failed to upsert label {label}: {e}", self.name);
                     return Err(e);
@@ -118,8 +128,8 @@ impl Namespace {
             Ok(None) => Ok(None),
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "[{}] error getting id={id}: {e}", self.name);
-                return Err(e.into())
-            },
+                Err(e.into())
+            }
         }
     }
 
@@ -158,20 +168,20 @@ impl Namespace {
         for other in others {
             intersection.retain(|e| other.contains(e))
         }
-        Ok(Vec::from_iter(&mut intersection.to_owned().into_iter()))
+        Ok(Vec::from_iter(&mut intersection.iter().copied()))
     }
 
-    /// Delete objects with the given ids. 
+    /// Delete objects with the given ids.
     pub fn delete_objects(&self, ids: Vec<u64>) -> Result<()> {
         for id in ids {
             match self.blobs.remove(bincode::serialize(&id)?) {
                 Ok(_) => {
                     log::debug!(target: "mango_chainsaw", "[{}] removed blob {id}", self.name);
-                },
+                }
                 Err(e) => {
                     log::error!(target: "mango_chainsaw", "[{}] failed to remove blob {id}: {e}", self.name);
-                    return Err(e.into())
-                },
+                    return Err(e.into());
+                }
             }
         }
         Ok(())
@@ -179,7 +189,7 @@ impl Namespace {
 
     /// Get namespace stats
     pub fn stats(&self) -> Result<NamespaceStats> {
-        let prefix = format!("{}", &self.name);
+        let _prefix = self.name.to_string();
         let stats = NamespaceStats {
             name: self.name.to_string(),
             blob_checksum: self.blobs.checksum()?,

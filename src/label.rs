@@ -29,7 +29,7 @@ impl Label {
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "failed to serialize key for {self}: {e}");
                 vec![]
-            },
+            }
         }
     }
 }

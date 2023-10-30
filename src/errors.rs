@@ -19,4 +19,7 @@ pub enum MangoChainsawError {
 
     #[error("Actix Error: {0}")]
     Actix(#[from] actix_web::Error),
+
+    #[error("Invalid namespace: {0}")]
+    BadNamespaceName(String),
 }

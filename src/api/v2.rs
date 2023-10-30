@@ -1,12 +1,16 @@
-use actix_web::{HttpServer, App, Responder, web::{self, Json}, HttpRequest, middleware::Logger, HttpResponse, get, put, post, delete};
+use actix_web::{
+    delete, get,
+    middleware::{Logger, Compress},
+    put,
+    web::{self},
+    App, HttpResponse, HttpServer, Responder,
+};
 use bytes::BytesMut;
-use rayon::prelude::*;
-use std::future::Future;
-use futures_util::StreamExt as _;
-use serde_derive::{Deserialize, Serialize};
-use crate::{internal::*, namespace::{NamespaceStats, self}};
-type Result<T> = actix_web::Result<T>;
 
+use futures_util::StreamExt as _;
+
+use crate::internal::*;
+type Result<T> = actix_web::Result<T>;
 
 pub async fn start_server(bind: (String, u16), db: DB) -> Result<()> {
     let appdata = db.clone();
@@ -14,18 +18,18 @@ pub async fn start_server(bind: (String, u16), db: DB) -> Result<()> {
     HttpServer::new(move || {
         let db = appdata.clone();
         App::new()
-        .wrap(Logger::default())
-        .app_data(web::Data::new(db))
-        .service(index)
-
-        .service(list_namespaces)
-        .service(delete_namespace)
-        .service(list_trees)
-
-        .service(put_blob)
-        .service(get_blob)
-        .service(delete_blob)
-        .service(query_blobs)
+            .wrap(Logger::default())
+            .wrap(Compress::default())
+            .app_data(web::Data::new(db))
+            .service(index)
+            .service(list_namespaces)
+            .service(delete_namespace)
+            .service(namespace_stats)
+            .service(list_trees)
+            .service(put_blob)
+            .service(get_blob)
+            .service(delete_blob)
+            .service(query_blobs)
     })
     .bind(bind)?
     .run()
@@ -45,7 +49,7 @@ async fn index() -> Result<impl Responder> {
 async fn list_namespaces(data: web::Data<DB>) -> Result<impl Responder> {
     match data.list_namespaces() {
         Ok(ns) => Ok(HttpResponse::Ok().json(ns)),
-        Err(e) => Err(actix_web::error::ErrorInternalServerError(e))
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
     }
 }
 
@@ -54,12 +58,12 @@ async fn list_namespaces(data: web::Data<DB>) -> Result<impl Responder> {
 async fn delete_namespace(data: web::Data<DB>, path: web::Path<String>) -> Result<impl Responder> {
     let name = path.into_inner();
     let namespace = match data.open_namespace(&name) {
-        Ok(ns) => ns, 
-        Err(e) => return Err(actix_web::error::ErrorNotFound(e))
+        Ok(ns) => ns,
+        Err(e) => return Err(actix_web::error::ErrorNotFound(e)),
     };
     match data.drop_namespace(namespace) {
         Ok(_) => Ok(HttpResponse::Ok().body(format!("{name} deleted"))),
-        Err(e) => Err(actix_web::error::ErrorInternalServerError(e))
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
     }
 }
 
@@ -74,14 +78,19 @@ async fn list_trees(data: web::Data<DB>) -> Result<impl Responder> {
 
 /// Insert an object into the namespace
 #[put("/api/v2/{namespace}")]
-async fn put_blob(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>, mut body: web::Payload) -> Result<impl Responder> {
+async fn put_blob(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+    query: web::Query<Vec<Label>>,
+    mut body: web::Payload,
+) -> Result<impl Responder> {
     let namespace = match data.open_namespace(&path.into_inner()) {
         Ok(ns) => ns,
         Err(e) => return Err(actix_web::error::ErrorInternalServerError(e)),
     };
     let mut blob = BytesMut::new();
     while let Some(bytes) = body.next().await {
-        blob.extend_from_slice(&bytes.map_err(|e| actix_web::error::ErrorInternalServerError(e))?)
+        blob.extend_from_slice(&bytes.map_err(actix_web::error::ErrorInternalServerError)?)
     }
     match namespace.insert(blob.freeze(), query.into_inner()) {
         Ok(id) => Ok(HttpResponse::Ok().json(id)),
@@ -106,7 +115,10 @@ async fn get_blob(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Result
 
 /// Delete an object by id
 #[delete("/api/v2/{namespace}/{id}")]
-async fn delete_blob(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Result<impl Responder> {
+async fn delete_blob(
+    data: web::Data<DB>,
+    path: web::Path<(String, u64)>,
+) -> Result<impl Responder> {
     let (name, id) = path.into_inner();
     let namespace = match data.open_namespace(&name) {
         Ok(ns) => ns,
@@ -120,7 +132,11 @@ async fn delete_blob(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Res
 
 /// Query a namespace for objects with the given labels
 #[get("/api/v2/{namespace}")]
-async fn query_blobs(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>) -> Result<impl Responder> {
+async fn query_blobs(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+    query: web::Query<Vec<Label>>,
+) -> Result<impl Responder> {
     let name = path.into_inner();
     let labels = query.into_inner();
     let namespace = match data.open_namespace(&name) {
@@ -134,7 +150,20 @@ async fn query_blobs(data: web::Data<DB>, path: web::Path<String>, query: web::Q
             } else {
                 Ok(HttpResponse::Ok().json(ids))
             }
-        },
+        }
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
+    }
+}
+
+#[get("/api/v2/{namespace}/stats")]
+async fn namespace_stats(data: web::Data<DB>, path: web::Path<String>) -> Result<impl Responder> {
+    let name = path.into_inner();
+    let namespace = match data.open_namespace(&name) {
+        Ok(ns) => ns,
+        Err(e) => return Err(actix_web::error::ErrorInternalServerError(e)),
+    };
+    match namespace.stats() {
+        Ok(stats) => Ok(HttpResponse::Ok().json(stats)),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
     }
 }
