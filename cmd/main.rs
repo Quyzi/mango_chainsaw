@@ -1,7 +1,7 @@
-use log::LevelFilter;
-use simplelog::{ColorChoice, CombinedLogger, Config as LogConfig, TermLogger, TerminalMode};
 use clap::Parser;
 use libmangochainsaw::prelude::*;
+use log::LevelFilter;
+use simplelog::{ColorChoice, CombinedLogger, Config as LogConfig, TermLogger, TerminalMode};
 use std::path::PathBuf;
 
 pub type Result<T> = libmangochainsaw::errors::Result<T>;
@@ -11,7 +11,7 @@ pub type Error = libmangochainsaw::errors::MangoChainsawError;
 #[command(
     author = "Chris Ober",
     version = "1.0",
-    about = "CLI tool for mango-chainsaw",
+    about = "CLI tool for mango-chainsaw"
 )]
 struct Args {
     #[arg(short = 'P', long)]
@@ -42,7 +42,8 @@ pub async fn main() -> Result<()> {
     let db = DB::new(&args.path)?;
 
     log::info!("Starting server at http://{}:{}", &args.address, &args.port);
-    db.start_server(args.address.to_owned(), args.port.to_owned()).await?;
+    db.start_server(args.address.to_owned(), args.port.to_owned())
+        .await?;
 
     log::info!("Stopping server at http://{}:{}", &args.address, &args.port);
     Ok(())

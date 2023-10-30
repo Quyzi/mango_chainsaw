@@ -20,7 +20,7 @@ pub(crate) fn test_new_namespace() -> Result<()> {
     )]);
 
     let db = DB::new(&temp.path().to_path_buf())?;
-    let testing = (&db).open_namespace("testing")?;
+    let testing = db.open_namespace("testing")?;
     for n in 0..50 {
         let object = Bytes::from(format!("n={:#?}", n));
         let mut labels = vec![

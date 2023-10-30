@@ -1,2 +1,2 @@
-pub mod namespace;
 mod api;
+pub mod namespace;

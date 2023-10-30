@@ -1,11 +1,10 @@
-
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::Display;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Label {
-    pub(crate) name: String,
-    pub(crate) value: String,
+    pub name: String,
+    pub value: String,
     // todo
     // pub(crate) weight: i8,
 }
@@ -30,7 +29,7 @@ impl Label {
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "failed to serialize key for {self}: {e}");
                 vec![]
-            },
+            }
         }
     }
 }
