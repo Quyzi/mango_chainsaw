@@ -1,9 +1,10 @@
 use actix_web::error::PayloadError;
 use thiserror::Error;
+use utoipa::{ToSchema, ToResponse};
 
 pub type Result<T> = std::result::Result<T, MangoChainsawError>;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, ToSchema, ToResponse)]
 pub enum MangoChainsawError {
     #[error("Sled Error: {0}")]
     Sled(#[from] sled::Error),

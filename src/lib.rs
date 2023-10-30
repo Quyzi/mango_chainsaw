@@ -15,6 +15,7 @@ pub(crate) mod internal {
     pub use crate::db::DB;
     pub use crate::label::Label;
     pub use crate::namespace::Namespace;
+    pub use crate::namespace::NamespaceStats;
 }
 
 pub mod prelude {
