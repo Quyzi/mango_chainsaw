@@ -1,3 +1,4 @@
+#![deprecated]
 use actix_web::{
     delete, get,
     middleware::{Logger, Compress},
