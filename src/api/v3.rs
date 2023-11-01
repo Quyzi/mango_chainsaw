@@ -23,12 +23,13 @@ type Result<T> = actix_web::Result<T>;
         crate::api::v3::insert,
         crate::api::v3::list,
         crate::api::v3::get,
+        crate::api::v3::search,
         crate::api::v3::deleteblob,
         crate::api::v3::deletenamespace,
     ),
     components(
-        schemas(Label, ApiError, InsertResponse),
-        responses(ApiError, Label, InsertResponse)
+        schemas(Label, ApiError, InsertResponse, QueryResponse),
+        responses(ApiError, Label, InsertResponse, QueryResponse),
     )
 )]
 pub struct V3Documentation;
@@ -40,6 +41,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::api::v3::insert)
         .service(crate::api::v3::list)
         .service(crate::api::v3::get)
+        .service(crate::api::v3::search)
         .service(crate::api::v3::deleteblob)
         .service(crate::api::v3::deletenamespace)
         .service(
@@ -330,7 +332,7 @@ pub struct QueryResponse {
     tag = "Mango Chainsaw API",
     params(
         ("namespace" = String, Path, description = "Name of the namespace to run this query on", example = "namespace_name"),
-        ("label" = Label, Query, description = "Get blobs matching ALL of the given labels", example = json!(vec![Label{name: "animal".to_string(), value: "dog".to_string()}]))
+        ("label" = Vec<Label>, Query, style = Form, description = "Get blobs matching ALL of the given labels", example = json!(vec![Label{name: "animal".to_string(), value: "dog".to_string()}]))
     ),
     responses(
         (status = 200, description = "database query successful", body = QueryResponse, example = json!(QueryResponse {success: true, message: "success".to_string(), namespace: "namespace_name".to_string(), labels: vec![Label{name: "animal".to_string(), value: "dog".to_string()}], results: Some(vec![format!("133742069")])})),

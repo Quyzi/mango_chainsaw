@@ -3,10 +3,7 @@ use bytes::Bytes;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use sled::Tree;
-use std::{
-    collections::{hash_map::DefaultHasher, HashSet},
-    hash::{Hash, Hasher},
-};
+use std::collections::HashSet;
 use utoipa::{ToResponse, ToSchema};
 
 /// `Namespace`  \
@@ -21,6 +18,9 @@ pub struct Namespace {
 
     /// Label storage
     labels: Tree,
+    
+    /// Link back to the Db
+    db: sled::Db,
 }
 
 impl Namespace {
@@ -35,6 +35,7 @@ impl Namespace {
             name: name.to_string(),
             blobs,
             labels,
+            db: db.inner.clone(),
         })
     }
 
@@ -61,23 +62,19 @@ impl Namespace {
     /// Insert an object into this namespace \
     /// Use labels to index the object by key:value
     pub fn insert(&self, blob: Bytes, labels: Vec<Label>) -> Result<u64> {
-        let hash = {
-            let mut hasher = DefaultHasher::new();
-            blob.hash(&mut hasher);
-            hasher.finish()
-        };
-        match self.blobs.insert(bincode::serialize(&hash)?, blob.to_vec()) {
+        let id = self.db.generate_id()?;
+        match self.blobs.insert(bincode::serialize(&id)?, blob.to_vec()) {
             Ok(_) => {
-                log::trace!(target: "mango_chainsaw", "[{}] inserted object with hash {hash}", self.name)
+                log::trace!(target: "mango_chainsaw", "[{}] inserted object with id {id}", self.name)
             }
             Err(e) => {
-                log::error!(target: "mango_chainsaw", "[{}] failed to insert object with hash {hash}: {e}", self.name);
+                log::error!(target: "mango_chainsaw", "[{}] failed to insert object with id {id}: {e}", self.name);
                 return Err(e.into());
             }
         }
 
         for label in labels {
-            match self.upsert_label(&label, hash) {
+            match self.upsert_label(&label, id) {
                 Ok(_) => {
                     log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name)
                 }
@@ -88,7 +85,7 @@ impl Namespace {
             }
         }
 
-        Ok(hash)
+        Ok(id)
     }
 
     pub(crate) fn upsert_label(&self, label: &Label, hash: u64) -> Result<()> {
