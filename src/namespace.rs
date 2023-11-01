@@ -7,6 +7,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
 };
+use utoipa::{ToResponse, ToSchema};
 
 /// `Namespace`  \
 /// A pointer to a Namespace
@@ -40,9 +41,12 @@ impl Namespace {
     pub(crate) fn drop(self, db: &DB) -> Result<()> {
         let name = &self.name;
         for tree in ["blobs", "labels"] {
-            match db.inner.drop_tree(format!("{name}_{tree}")) {
-                Ok(_) => {
-                    log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}", self.name)
+            match db
+                .inner
+                .drop_tree(bincode::serialize(&format!("{name}_{tree}"))?)
+            {
+                Ok(r) => {
+                    log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}, result: {r}", self.name)
                 }
                 Err(e) => {
                     log::error!(target: "mango_chainsaw", "[{}] failed to drop tree {name}_{tree} {e}", self.name);
@@ -50,6 +54,7 @@ impl Namespace {
                 }
             }
         }
+        db.inner.flush()?;
         Ok(())
     }
 
@@ -222,7 +227,7 @@ impl Namespace {
     // }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ToSchema, ToResponse)]
 pub struct NamespaceStats {
     pub name: String,
     pub blob_checksum: u32,

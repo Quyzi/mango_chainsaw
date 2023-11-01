@@ -1,4 +1,8 @@
-use crate::{api::v2::start_server, internal::*};
+use crate::internal::*;
+use actix_web::{
+    middleware::{Compress, Logger},
+    web, App, HttpServer,
+};
 use rayon::prelude::*;
 use std::path::PathBuf;
 
@@ -78,7 +82,18 @@ impl DB {
     }
 
     pub async fn start_server(&self, address: String, port: u16) -> Result<()> {
-        start_server((address, port), self.clone()).await?;
+        let outer = self.clone();
+        HttpServer::new(move || {
+            let stats = outer.clone();
+            App::new()
+                .wrap(Logger::default())
+                .wrap(Compress::default())
+                .app_data(web::Data::new(stats))
+                .configure(crate::api::v3::configure)
+        })
+        .bind((address, port))?
+        .run()
+        .await?;
         Ok(())
     }
 }
