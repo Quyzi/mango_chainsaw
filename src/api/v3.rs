@@ -2,25 +2,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::internal::*;
 use actix_web::{
-    delete, get, put, head,
+    delete, get, options, put,
     web::{self},
-    HttpResponse, Responder, options,
+    HttpResponse, Responder,
 };
 use bytes::BytesMut;
 use futures_util::StreamExt;
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
-use utoipa::{ToResponse, ToSchema, OpenApi};
+use utoipa::{OpenApi, ToResponse, ToSchema};
 use utoipa_rapidoc::RapiDoc;
-use utoipa_swagger_ui::{SwaggerUi};
+use utoipa_swagger_ui::SwaggerUi;
 type Result<T> = actix_web::Result<T>;
 
 #[derive(OpenApi)]
 #[openapi(
-    info(
-        title = "Mango Chainsaw API v3",
-        description = "Store stuff in style",
-    ),
+    info(title = "Mango Chainsaw API v3", description = "Store stuff in style",),
     paths(
         crate::api::v3::index,
         crate::api::v3::insert,
@@ -32,7 +29,7 @@ type Result<T> = actix_web::Result<T>;
     components(
         schemas(Label, ApiError, InsertResponse),
         responses(ApiError, Label, InsertResponse)
-    ),
+    )
 )]
 pub struct V3Documentation;
 
@@ -45,8 +42,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(crate::api::v3::get)
         .service(crate::api::v3::deleteblob)
         .service(crate::api::v3::deletenamespace)
-        .service(SwaggerUi::new("/api/swagger-ui/{_:.*}")
-            .url("/api-docs/openapi.json", openapi.clone())
+        .service(
+            SwaggerUi::new("/api/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
         )
         .service(RapiDoc::new("/api-docs/openapi.json").path("/api/rapidoc"));
 }
@@ -81,9 +78,8 @@ pub enum ApiError {
     SerializerError(String),
 }
 
-
 /// API V3 Index
-/// 
+///
 /// Hello!
 #[utoipa::path(
     get, path = "/api/v3",
@@ -95,7 +91,10 @@ pub enum ApiError {
 )]
 #[get("/api/v3")]
 pub async fn index(_data: web::Data<DB>) -> Result<impl Responder> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time travel is banned.").as_millis();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time travel is banned.")
+        .as_millis();
     if now % 12345 == 0 {
         Ok(HttpResponse::ImATeapot().body("I'm a teapot"))
     } else {
@@ -103,9 +102,8 @@ pub async fn index(_data: web::Data<DB>) -> Result<impl Responder> {
     }
 }
 
-
 /// Get a list of Namespaces
-/// 
+///
 /// Returns a list of namespace names
 #[utoipa::path(
     options, path = "/api/v3",
@@ -128,7 +126,7 @@ pub async fn list(data: web::Data<DB>) -> Result<impl Responder> {
 }
 
 /// Delete a namespace from the database by name
-/// 
+///
 /// This deletes all of the data stored in the namespace.
 #[utoipa::path(
     delete, path = "/api/v3/{namespace}",
@@ -138,31 +136,36 @@ pub async fn list(data: web::Data<DB>) -> Result<impl Responder> {
     ),
     responses(
         (status = 200, description = "Namespace deleted successfully", body = String, example = json!("namespace_name deleted")),
-        (status = 500, description = "Failed to delete namespace, namespace did not open", body = ApiError, example = json!(ApiError::OpenNamespace(format!("namespace_name"), format!("something broke")))),
-        (status = 500, description = "Failed to delete namespace", body = ApiError, example = json!(ApiError::DeleteNamespace(format!("namespace_name"), format!("something broke")))),
+        (status = 500, description = "Failed to delete namespace, namespace did not open", body = ApiError, example = json!(ApiError::OpenNamespace("namespace_name".to_string(), "something broke".to_string()))),
+        (status = 500, description = "Failed to delete namespace", body = ApiError, example = json!(ApiError::DeleteNamespace("namespace_name".to_string(), "something broke".to_string()))),
     )
 )]
 #[delete("/api/v3/{namespace}")]
-pub async fn deletenamespace(data: web::Data<DB>, path: web::Path<String>) -> Result<impl Responder> {
+pub async fn deletenamespace(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+) -> Result<impl Responder> {
     let db = data.clone();
     let namespace_name = path.into_inner();
     let namespace = match db.open_namespace(&namespace_name) {
-        Ok(ns) => ns, 
+        Ok(ns) => ns,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to open namespace {namespace_name}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::OpenNamespace(namespace_name, e.to_string())))
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::OpenNamespace(namespace_name, e.to_string())));
         }
     };
     match db.drop_namespace(namespace) {
         Ok(_) => Ok(HttpResponse::Ok().json(format!("{namespace_name} deleted"))),
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to delete namespace {namespace_name}, error={e}");
-            Ok(HttpResponse::InternalServerError().json(ApiError::DeleteNamespace(namespace_name, e.to_string())))
+            Ok(HttpResponse::InternalServerError()
+                .json(ApiError::DeleteNamespace(namespace_name, e.to_string())))
         }
     }
 }
 
-/// Insert request response 
+/// Insert request response
 #[derive(Serialize, Deserialize, Clone, ToSchema, ToResponse)]
 pub struct InsertResponse {
     /// `true` if insert was successful
@@ -181,9 +184,8 @@ pub struct InsertResponse {
     labels: Vec<Label>,
 }
 
-
 /// Insert a blob into a namespace by name
-/// 
+///
 /// The namespace is provided in the Path
 /// The labels are provided by the Query
 /// The body of the request is the Payload
@@ -192,17 +194,22 @@ pub struct InsertResponse {
     tag = "Mango Chainsaw API",
     params(
         ("namespace" = String, Path, description = "The namespace to put the blob into.", example = "namespace_name"),
-        ("label" = Vec<Label>, Query, style = Form, description = "Labels describing this blob.", example = json!(vec![Label{name: format!("animal"), value: format!("dog")}])),
+        ("label" = Vec<Label>, Query, style = Form, description = "Labels describing this blob.", example = json!(vec![Label{name: "animal".to_string(), value: "dog".to_string()}])),
     ),
     request_body = inline(String),
     responses(
-        (status = 200, description = "Blob successfully inserted into the namespace", body = InsertResponse, example = json!(InsertResponse { success: true, message: format!("Ok"), id: format!("42069"), size: format!("12345"), labels: vec![Label{name: format!("animal"), value: format!("dog")}]})),
+        (status = 200, description = "Blob successfully inserted into the namespace", body = InsertResponse, example = json!(InsertResponse { success: true, message: "Ok".to_string(), id: "42069".to_string(), size: "12345".to_string(), labels: vec![Label{name: "animal".to_string(), value: "dog".to_string()}]})),
         (status = 500, description = "Failed to open namespace", body = ApiError, example = json!(ApiError::OpenNamespace("namespace_name".to_string(), "something broke".to_string()))),
         (status = 500, description = "Failed to insert blob into namespace", body = ApiError, example = json!(ApiError::InsertError("namespace_name".to_string(), 420, "something broke".to_string()))),
     )
 )]
 #[put("/api/v3/{namespace}")]
-pub async fn insert(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>, mut body: web::Payload) -> Result<impl Responder> {
+pub async fn insert(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+    query: web::Query<Vec<Label>>,
+    mut body: web::Payload,
+) -> Result<impl Responder> {
     let db = data.clone();
     let namespace_name = path.into_inner();
     let labels = query.into_inner();
@@ -216,10 +223,11 @@ pub async fn insert(data: web::Data<DB>, path: web::Path<String>, query: web::Qu
     let size = blob.len();
 
     let namespace = match db.open_namespace(&namespace_name) {
-        Ok(ns) => ns, 
+        Ok(ns) => ns,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to open namespace {namespace_name} to insert blob with size {size}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::OpenNamespace(namespace_name, e.to_string())))
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::OpenNamespace(namespace_name, e.to_string())));
         }
     };
 
@@ -227,24 +235,29 @@ pub async fn insert(data: web::Data<DB>, path: web::Path<String>, query: web::Qu
         Ok(id) => id,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to insert blob into namespace {namespace_name} with size {size}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::InsertError(namespace_name, size, e.to_string())))
+            return Ok(
+                HttpResponse::InternalServerError().json(ApiError::InsertError(
+                    namespace_name,
+                    size,
+                    e.to_string(),
+                )),
+            );
         }
     };
 
     log::info!(target: "mango_chainsaw", "inserted blob with id={id} into namespace={namespace_name}");
     Ok(HttpResponse::Ok().json(InsertResponse {
         success: true,
-        message: format!("Blob inserted into namespace"),
+        message: "Blob inserted into namespace".to_string(),
         id: format!("{id}"),
         size: format!("{size}"),
-        labels
+        labels,
     }))
 }
 
-
 /// Get a blob from a namespace by id
-/// 
-/// If a blob exists in the namespace with the given id, it will be returned as Bytes. 
+///
+/// If a blob exists in the namespace with the given id, it will be returned as Bytes.
 #[utoipa::path(
     get, path = "/api/v3/{namespace}/{id}",
     tag = "Mango Chainsaw API",
@@ -267,25 +280,29 @@ pub async fn get(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Result<
         Ok(ns) => ns,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to open namespace {namespace_name} to get blob with id {id}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::OpenNamespace(namespace_name, e.to_string())));
-        },
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::OpenNamespace(namespace_name, e.to_string())));
+        }
     };
     match namespace.get(id) {
         Ok(Some(blob)) => {
             log::info!(target: "mango_chainsaw", "found blob with id={id} in namespace={namespace_name} with size={}", blob.len());
             Ok(HttpResponse::Ok().body(blob))
-        },
+        }
         Ok(None) => {
             log::info!(target: "mango_chainsaw", "failed to find blob with id={id} in namespace={namespace_name}");
             Ok(HttpResponse::NotFound().json(ApiError::BlobNotFound(namespace_name, id)))
-        },
+        }
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to get blob from namespace {namespace_name} with id {id}, error={e}");
-            Ok(HttpResponse::InternalServerError().json(ApiError::GetError(namespace_name, id, e.to_string())))
-        },
+            Ok(HttpResponse::InternalServerError().json(ApiError::GetError(
+                namespace_name,
+                id,
+                e.to_string(),
+            )))
+        }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema, ToResponse)]
 pub struct QueryResponse {
@@ -306,48 +323,57 @@ pub struct QueryResponse {
 }
 
 /// Search a namespace for blobs matching all of the given label pairs
-/// 
+///
 /// Returns a list of blob ids for any blobs that match all of the given labels
 #[utoipa::path(
     get, path = "/api/v3/{namespace}",
     tag = "Mango Chainsaw API",
     params(
         ("namespace" = String, Path, description = "Name of the namespace to run this query on", example = "namespace_name"),
-        ("label" = Label, Query, description = "Get blobs matching ALL of the given labels", example = json!(vec![Label{name: format!("animal"), value: format!("dog")}]))
+        ("label" = Label, Query, description = "Get blobs matching ALL of the given labels", example = json!(vec![Label{name: "animal".to_string(), value: "dog".to_string()}]))
     ),
     responses(
-        (status = 200, description = "database query successful", body = QueryResponse, example = json!(QueryResponse {success: true, message: format!("success"), namespace: format!("namespace_name"), labels: vec![Label{name: format!("animal"), value: format!("dog")}], results: Some(vec![format!("133742069")])})),
-        (status = 400, description = "database query failed, no labels given", body = ApiError, example = json!(ApiError::QueryError(format!("namespace_name"), format!("Query must have at least one label")))),
-        (status = 404, description = "database query successful, but no events found", body = QueryResponse, example = json!(QueryResponse { success: true, message: format!("no blobs found"), namespace: format!("namespace_name"), labels: vec![Label{name: format!("animal"), value: format!("cat")}], results: None})),
-        (status = 500, description = "database query failed", body = ApiError, example = json!(ApiError::QueryError(format!("namespace_name"), format!("something broke"))))
+        (status = 200, description = "database query successful", body = QueryResponse, example = json!(QueryResponse {success: true, message: "success".to_string(), namespace: "namespace_name".to_string(), labels: vec![Label{name: "animal".to_string(), value: "dog".to_string()}], results: Some(vec![format!("133742069")])})),
+        (status = 400, description = "database query failed, no labels given", body = ApiError, example = json!(ApiError::QueryError("namespace_name".to_string(), "Query must have at least one label".to_string()))),
+        (status = 404, description = "database query successful, but no events found", body = QueryResponse, example = json!(QueryResponse { success: true, message: "no blobs found".to_string(), namespace: "namespace_name".to_string(), labels: vec![Label{name: "animal".to_string(), value: "cat".to_string()}], results: None})),
+        (status = 500, description = "database query failed", body = ApiError, example = json!(ApiError::QueryError("namespace_name".to_string(), "something broke".to_string())))
     )
 )]
 #[get("/api/v3/{namespace}")]
-pub async fn search(data: web::Data<DB>, path: web::Path<String>, query: web::Query<Vec<Label>>) -> Result<impl Responder> {
+pub async fn search(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+    query: web::Query<Vec<Label>>,
+) -> Result<impl Responder> {
     let db = data.clone();
     let namespace_name = path.into_inner();
     let labels = query.into_inner();
     if labels.is_empty() {
-        return Ok(HttpResponse::BadRequest().json(ApiError::QueryError(namespace_name, format!("Query must have at least one label"))))
+        return Ok(HttpResponse::BadRequest().json(ApiError::QueryError(
+            namespace_name,
+            "Query must have at least one label".to_string(),
+        )));
     }
     let namespace = match db.open_namespace(&namespace_name) {
         Ok(ns) => ns,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to open namespace {namespace_name} for querying");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::QueryError(namespace_name, e.to_string())))
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::QueryError(namespace_name, e.to_string())));
         }
     };
     let results = match namespace.query(labels.to_owned()) {
         Ok(ids) => ids,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to query namespace {namespace_name}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::QueryError(namespace_name, e.to_string())))
-        },
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::QueryError(namespace_name, e.to_string())));
+        }
     };
     if results.is_empty() {
         Ok(HttpResponse::Ok().json(QueryResponse {
             success: true,
-            message: format!("Query successful, but no blobs matched the given labels."),
+            message: "Query successful, but no blobs matched the given labels.".to_string(),
             namespace: namespace_name,
             labels,
             results: None,
@@ -355,7 +381,10 @@ pub async fn search(data: web::Data<DB>, path: web::Path<String>, query: web::Qu
     } else {
         Ok(HttpResponse::Ok().json(QueryResponse {
             success: true,
-            message: format!("Query successful, found {} blobs for the given labels", results.len()),
+            message: format!(
+                "Query successful, found {} blobs for the given labels",
+                results.len()
+            ),
             namespace: namespace_name,
             labels,
             results: Some(results.into_iter().map(|it| format!("{it}")).collect()),
@@ -364,7 +393,7 @@ pub async fn search(data: web::Data<DB>, path: web::Path<String>, query: web::Qu
 }
 
 /// Delete a blob from a namespace
-/// 
+///
 /// Deletes a blob with the given id from the given namespace
 #[utoipa::path(
     delete, path = "/api/v3/{namespace}/{id}",
@@ -375,26 +404,33 @@ pub async fn search(data: web::Data<DB>, path: web::Path<String>, query: web::Qu
     ),
     responses(
         (status = 200, description = "Successfully deleted blob", body = String, example = json!("Blob with id 133742069 deleted from namespace=namespace_name")),
-        (status = 500, description = "Failed to delete blob", body = ApiError, example = json!(ApiError::DeleteBlobError(format!("namespace_name"), 133742069))),
-        (status = 500, description = "Failed to delete blob, namespace did not open", body = ApiError, example = json!(ApiError::OpenNamespace(format!("namespace_name"), format!("something broke")))),
+        (status = 500, description = "Failed to delete blob", body = ApiError, example = json!(ApiError::DeleteBlobError("namespace_name".to_string(), 133742069))),
+        (status = 500, description = "Failed to delete blob, namespace did not open", body = ApiError, example = json!(ApiError::OpenNamespace("namespace_name".to_string(), "something broke".to_string()))),
     ),
 )]
 #[delete("/api/v3/{namespace}/{id}")]
-pub async fn deleteblob(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Result<impl Responder> {
+pub async fn deleteblob(
+    data: web::Data<DB>,
+    path: web::Path<(String, u64)>,
+) -> Result<impl Responder> {
     let db = data.clone();
     let (namespace_name, id) = path.into_inner();
     let namespace = match db.open_namespace(&namespace_name) {
         Ok(ns) => ns,
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to open namespace {namespace_name} to get blob with id {id}, error={e}");
-            return Ok(HttpResponse::InternalServerError().json(ApiError::OpenNamespace(namespace_name, e.to_string())));
-        },
+            return Ok(HttpResponse::InternalServerError()
+                .json(ApiError::OpenNamespace(namespace_name, e.to_string())));
+        }
     };
     match namespace.delete_objects(vec![id]) {
-        Ok(_) => Ok(HttpResponse::Ok().body(format!("Blob with id={id} deleted from namespace={namespace_name}"))),
+        Ok(_) => Ok(HttpResponse::Ok().body(format!(
+            "Blob with id={id} deleted from namespace={namespace_name}"
+        ))),
         Err(e) => {
             log::error!(target: "mango_chainsaw", "failed to delete blob from namespace {namespace_name} with id {id}, error={e}");
-            Ok(HttpResponse::InternalServerError().json(ApiError::DeleteBlobError(namespace_name, id)))
+            Ok(HttpResponse::InternalServerError()
+                .json(ApiError::DeleteBlobError(namespace_name, id)))
         }
     }
 }

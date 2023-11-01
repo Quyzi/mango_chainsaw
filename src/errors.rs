@@ -1,6 +1,6 @@
 use actix_web::error::PayloadError;
 use thiserror::Error;
-use utoipa::{ToSchema, ToResponse};
+use utoipa::{ToResponse, ToSchema};
 
 pub type Result<T> = std::result::Result<T, MangoChainsawError>;
 

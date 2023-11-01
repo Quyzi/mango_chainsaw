@@ -1,7 +1,7 @@
 #![deprecated]
 use actix_web::{
     delete, get,
-    middleware::{Logger, Compress},
+    middleware::{Compress, Logger},
     put,
     web::{self},
     App, HttpResponse, HttpServer, Responder,
@@ -42,7 +42,7 @@ pub async fn start_server(bind: (String, u16), db: DB) -> Result<()> {
         )
     )]
     struct ApiDoc;
-    
+
     let appdata = db.clone();
     let openapi = ApiDoc::openapi();
 
@@ -62,8 +62,8 @@ pub async fn start_server(bind: (String, u16), db: DB) -> Result<()> {
             .service(delete_blob)
             .service(query_blobs)
             .service(Redoc::with_url("/redoc", openapi.clone()))
-            .service(SwaggerUi::new("/swagger-ui/{_:.*}")
-                .url("/api-docs/openapi.json", openapi.clone())
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
             )
             .service(RapiDoc::new("/api-docs/openapi.json").path("/rapidoc"))
     })
@@ -87,7 +87,7 @@ pub async fn index() -> Result<impl Responder> {
 }
 
 #[utoipa::path(
-    get, 
+    get,
     path = "/api/v2/namespaces",
     responses(
         (status = 200, description = "Successfully got list of namespaces", body = Vec<String>),
@@ -115,7 +115,10 @@ pub async fn list_namespaces(data: web::Data<DB>) -> Result<impl Responder> {
     )
 )]
 #[delete("/api/v2/{namespace}")]
-pub async fn delete_namespace(data: web::Data<DB>, path: web::Path<String>) -> Result<impl Responder> {
+pub async fn delete_namespace(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+) -> Result<impl Responder> {
     let name = path.into_inner();
     let namespace = match data.open_namespace(&name) {
         Ok(ns) => ns,
@@ -190,7 +193,10 @@ pub async fn put_blob(
     )
 )]
 #[get("/api/v2/{namespace}/{id}")]
-pub async fn get_blob(data: web::Data<DB>, path: web::Path<(String, u64)>) -> Result<impl Responder> {
+pub async fn get_blob(
+    data: web::Data<DB>,
+    path: web::Path<(String, u64)>,
+) -> Result<impl Responder> {
     let (name, id) = path.into_inner();
     let namespace = match data.open_namespace(&name) {
         Ok(ns) => ns,
@@ -280,7 +286,10 @@ pub async fn query_blobs(
     )
 )]
 #[get("/api/v2/{namespace}/stats")]
-pub async fn namespace_stats(data: web::Data<DB>, path: web::Path<String>) -> Result<impl Responder> {
+pub async fn namespace_stats(
+    data: web::Data<DB>,
+    path: web::Path<String>,
+) -> Result<impl Responder> {
     let name = path.into_inner();
     let namespace = match data.open_namespace(&name) {
         Ok(ns) => ns,

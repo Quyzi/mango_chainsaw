@@ -1,5 +1,8 @@
 use crate::internal::*;
-use actix_web::{HttpServer, App, middleware::{Logger, Compress}, web};
+use actix_web::{
+    middleware::{Compress, Logger},
+    web, App, HttpServer,
+};
 use rayon::prelude::*;
 use std::path::PathBuf;
 
@@ -89,7 +92,8 @@ impl DB {
                 .configure(crate::api::v3::configure)
         })
         .bind((address, port))?
-        .run().await?;
+        .run()
+        .await?;
         Ok(())
     }
 }

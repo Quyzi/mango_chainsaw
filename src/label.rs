@@ -1,6 +1,6 @@
 use serde_derive::{Deserialize, Serialize};
-use utoipa::{ToSchema, ToResponse};
 use std::fmt::Display;
+use utoipa::{ToResponse, ToSchema};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, ToResponse)]
 pub struct Label {

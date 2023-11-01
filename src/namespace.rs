@@ -3,11 +3,11 @@ use bytes::Bytes;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use sled::Tree;
-use utoipa::{ToSchema, ToResponse};
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
 };
+use utoipa::{ToResponse, ToSchema};
 
 /// `Namespace`  \
 /// A pointer to a Namespace
@@ -41,7 +41,10 @@ impl Namespace {
     pub(crate) fn drop(self, db: &DB) -> Result<()> {
         let name = &self.name;
         for tree in ["blobs", "labels"] {
-            match db.inner.drop_tree(bincode::serialize(&format!("{name}_{tree}"))?) {
+            match db
+                .inner
+                .drop_tree(bincode::serialize(&format!("{name}_{tree}"))?)
+            {
                 Ok(r) => {
                     log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}, result: {r}", self.name)
                 }
