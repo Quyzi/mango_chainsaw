@@ -30,10 +30,14 @@ futures-util = "0.3.29"
 clap = { version = "4.4.7", features = ["derive"] }
 figment = { version = "0.10.11", features = ["json", "yaml", "env"] }
 serde_json = "1.0.107"
+<<<<<<< Updated upstream
 utoipa = { version = "4", features = ["actix_extras"] }
 utoipa-swagger-ui = { version = "4", features = ["actix-web"] }
 utoipa-redoc = { version = "1", features = ["actix-web"] }
 utoipa-rapidoc = { version = "1", features = ["actix-web"] }
+=======
+utoipa-swagger-ui = { version = "3", features = ["actix-web"] }
+>>>>>>> Stashed changes
 
 [dev-dependencies]
 tempfile = "3.8.1"

@@ -40,6 +40,7 @@ impl DB {
     }
 
     pub fn list_namespaces(&self) -> Result<Vec<String>> {
+<<<<<<< Updated upstream
         let mut namespaces: Vec<String> = self
             .list_trees()?
             .par_iter()
@@ -59,10 +60,24 @@ impl DB {
         namespaces.sort();
         namespaces.dedup();
         Ok(namespaces)
+=======
+        let mut trees: Vec<String> = self.list_trees()?.par_iter().filter_map(|tree| {
+            let tree = if tree.ends_with("_blobs") {
+                tree.strip_suffix("_blobs").unwrap
+            } else {
+
+            }
+            let split: Vec<&str> = tree.rsplitn(2, "_").collect();
+            Some(split[1].to_string())
+        }).collect();
+        trees.dedup();
+        Ok(trees)
+>>>>>>> Stashed changes
     }
 
     pub fn list_trees(&self) -> Result<Vec<String>> {
         let mut trees: Vec<String> = self.inner.tree_names().par_iter().filter_map(|bytes| {
+<<<<<<< Updated upstream
             match bincode::deserialize::<&str>(bytes) {
                 Ok(name) => Some(name.to_string()),
                 Err(outer) => {
@@ -73,6 +88,13 @@ impl DB {
                             None
                         },
                     }
+=======
+            match bincode::deserialize::<String>(bytes) {
+                Ok(name) => Some(name),
+                Err(e) => {
+                    log::error!(target: "mango_chainsaw", "error deserializing tree name {bytes:?}: {e:?}");
+                    None
+>>>>>>> Stashed changes
                 },
             }
         }).collect();
