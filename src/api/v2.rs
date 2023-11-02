@@ -231,7 +231,7 @@ pub async fn delete_blob(
         Ok(ns) => ns,
         Err(e) => return Err(actix_web::error::ErrorInternalServerError(e)),
     };
-    match namespace.delete_objects(vec![id]) {
+    match namespace.delete_blob(id) {
         Ok(_) => Ok(HttpResponse::Ok().json(format!("{id} deleted"))),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(e)),
     }

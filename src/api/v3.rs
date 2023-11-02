@@ -425,7 +425,7 @@ pub async fn deleteblob(
                 .json(ApiError::OpenNamespace(namespace_name, e.to_string())));
         }
     };
-    match namespace.delete_objects(vec![id]) {
+    match namespace.delete_blob(id) {
         Ok(_) => Ok(HttpResponse::Ok().body(format!(
             "Blob with id={id} deleted from namespace={namespace_name}"
         ))),
