@@ -3,7 +3,7 @@ use bytes::Bytes;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use sled::Tree;
-use std::{collections::HashSet, ops::Index};
+use std::collections::HashSet;
 use utoipa::{ToResponse, ToSchema};
 
 /// `Namespace`  \
@@ -21,7 +21,7 @@ pub struct Namespace {
 
     /// Label storage
     labels: Tree,
-    
+
     /// Link back to the Db
     db: sled::Db,
 }
@@ -67,12 +67,14 @@ impl Namespace {
         Ok(())
     }
 
-
     /// Insert an object into this namespace \
     /// Use labels to index the object by key:value
     pub fn insert(&self, blob: Bytes, labels: Vec<Label>) -> Result<u64> {
         let id = self.db.generate_id()?;
-        match self.blobs.insert(bincode::serialize(&format!("{id}"))?, blob.to_vec()) {
+        match self
+            .blobs
+            .insert(bincode::serialize(&format!("{id}"))?, blob.to_vec())
+        {
             Ok(_) => {
                 log::trace!(target: "mango_chainsaw", "[{}] inserted object with id {id}", self.name)
             }
@@ -81,9 +83,9 @@ impl Namespace {
                 return Err(e.into());
             }
         }
-        
-        for label in labels.to_owned() {
-            match self.upsert_label(&label, id) {
+
+        for label in &labels.to_owned() {
+            match self.upsert_label(label, id) {
                 Ok(_) => {
                     log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name)
                 }
@@ -99,7 +101,7 @@ impl Namespace {
     }
 
     /// Insert blob -> Labels relation into the Database
-    /// 
+    ///
     /// It is used to clean up after deleting a blob.
     pub(crate) fn insert_blobs_labels(&self, id: u64, labels: Vec<Label>) -> Result<()> {
         let key = match bincode::serialize(&format!("{id}")) {
@@ -121,16 +123,16 @@ impl Namespace {
             Ok(_) => {
                 log::trace!(target: "mango_chainsaw", "[{}] successfully inserted relation for blob with id {id}", self.name);
                 Ok(())
-            },
+            }
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "[{}] failed to insert relation key for blob with id {id}: {e}", self.name);
                 Err(e.into())
-            },
+            }
         }
     }
 
-    /// Upsert a label into the Database. 
-    /// 
+    /// Upsert a label into the Database.
+    ///
     /// This creates, updates, or deletes as necessary
     pub(crate) fn upsert_label(&self, label: &Label, id: u64) -> Result<()> {
         let upsert = |old: Option<&[u8]>| -> Option<Vec<u8>> {
@@ -231,10 +233,10 @@ impl Namespace {
         match self.blobs.remove(bincode::serialize(&format!("{id}"))?) {
             Ok(Some(_)) => {
                 log::debug!(target: "mango_chainsaw", "[{}] removed blob {id}", self.name);
-            },
+            }
             Ok(None) => {
                 log::warn!(target: "mango_chainsaw", "[{}] got None when removing blob {id}", self.name);
-            },
+            }
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "[{}] failed to remove blob {id}: {e}", self.name);
                 return Err(e.into());
@@ -245,8 +247,8 @@ impl Namespace {
     }
 
     /// Clean up after deleted blobs
-    /// 
-    /// This walks the relations tree. Entries that do not have a blob have label data that needs to be cleaned up after. 
+    ///
+    /// This walks the relations tree. Entries that do not have a blob have label data that needs to be cleaned up after.
     pub(crate) fn cleanup(&self, id: u64) -> Result<()> {
         let key = bincode::serialize(&id)?;
         log::info!(target: "mango_chainsaw", "into cleanup");
@@ -256,7 +258,7 @@ impl Namespace {
             Err(e) => {
                 log::error!(target: "mango_chainsaw", "[{}] failed to clean up relation for blob {id}: {e}", self.name);
                 return Err(e.into());
-            },
+            }
         };
         let res: Vec<String> = labels.into_par_iter().filter_map(|label| {
             log::info!(target: "mango_chainsaw", "into iter {label}");
