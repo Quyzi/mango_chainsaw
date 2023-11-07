@@ -16,9 +16,12 @@ pub struct Namespace {
     /// Blob storage
     blobs: Tree,
 
+    /// Relationships between blobs and their labels
+    blobs_labels: Tree,
+
     /// Label storage
     labels: Tree,
-    
+
     /// Link back to the Db
     db: sled::Db,
 }
@@ -31,9 +34,14 @@ impl Namespace {
         let labels = db
             .inner
             .open_tree(bincode::serialize(&format!("{name}_labels"))?)?;
+        let relations = db
+            .inner
+            .open_tree(bincode::serialize(&format!("{name}_relation"))?)?;
+
         Ok(Self {
             name: name.to_string(),
             blobs,
+            blobs_labels: relations,
             labels,
             db: db.inner.clone(),
         })
@@ -41,7 +49,7 @@ impl Namespace {
 
     pub(crate) fn drop(self, db: &DB) -> Result<()> {
         let name = &self.name;
-        for tree in ["blobs", "labels"] {
+        for tree in ["blobs", "labels", "relations"] {
             match db
                 .inner
                 .drop_tree(bincode::serialize(&format!("{name}_{tree}"))?)
@@ -63,7 +71,10 @@ impl Namespace {
     /// Use labels to index the object by key:value
     pub fn insert(&self, blob: Bytes, labels: Vec<Label>) -> Result<u64> {
         let id = self.db.generate_id()?;
-        match self.blobs.insert(bincode::serialize(&id)?, blob.to_vec()) {
+        match self
+            .blobs
+            .insert(bincode::serialize(&format!("{id}"))?, blob.to_vec())
+        {
             Ok(_) => {
                 log::trace!(target: "mango_chainsaw", "[{}] inserted object with id {id}", self.name)
             }
@@ -73,8 +84,8 @@ impl Namespace {
             }
         }
 
-        for label in labels {
-            match self.upsert_label(&label, id) {
+        for label in &labels.to_owned() {
+            match self.upsert_label(label, id) {
                 Ok(_) => {
                     log::trace!(target: "mango_chainsaw", "[{}] upserted label {label}", self.name)
                 }
@@ -84,17 +95,52 @@ impl Namespace {
                 }
             }
         }
+        self.insert_blobs_labels(id, labels)?;
 
         Ok(id)
     }
 
-    pub(crate) fn upsert_label(&self, label: &Label, hash: u64) -> Result<()> {
+    /// Insert blob -> Labels relation into the Database
+    ///
+    /// It is used to clean up after deleting a blob.
+    pub(crate) fn insert_blobs_labels(&self, id: u64, labels: Vec<Label>) -> Result<()> {
+        let key = match bincode::serialize(&format!("{id}")) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "[{}] failed to serialize key for id {id}: {e}", self.name);
+                return Err(e.into());
+            }
+        };
+        let labels: Vec<String> = labels.into_iter().map(|lbl| format!("{lbl}")).collect();
+        let labelsbytes = match bincode::serialize(&labels) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "[{}] failed to insert relations for blob with id {id}: {e}", self.name);
+                return Err(e.into());
+            }
+        };
+        match self.blobs_labels.insert(key, labelsbytes) {
+            Ok(_) => {
+                log::trace!(target: "mango_chainsaw", "[{}] successfully inserted relation for blob with id {id}", self.name);
+                Ok(())
+            }
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "[{}] failed to insert relation key for blob with id {id}: {e}", self.name);
+                Err(e.into())
+            }
+        }
+    }
+
+    /// Upsert a label into the Database.
+    ///
+    /// This creates, updates, or deletes as necessary
+    pub(crate) fn upsert_label(&self, label: &Label, id: u64) -> Result<()> {
         let upsert = |old: Option<&[u8]>| -> Option<Vec<u8>> {
             match old {
                 Some(bytes) => {
-                    let mut hashes: Vec<u64> = match bincode::deserialize::<Vec<u64>>(bytes) {
+                    let mut ids: Vec<u64> = match bincode::deserialize::<Vec<u64>>(bytes) {
                         Ok(h) => {
-                            log::trace!(target: "mango_chainsaw", "[{}] got {} hashes for label {label}", self.name, h.len());
+                            log::trace!(target: "mango_chainsaw", "[{}] got {} ids for label {label}", self.name, h.len());
                             h
                         }
                         Err(e) => {
@@ -102,9 +148,15 @@ impl Namespace {
                             vec![]
                         }
                     };
-                    if !hashes.is_empty() {
-                        hashes.push(hash);
-                        if let Ok(bs) = bincode::serialize(&hashes) {
+                    if !ids.is_empty() {
+                        if ids.contains(&id) {
+                            // This id already exists in the list. Delete it instead
+                            ids.retain(|item| item != &id);
+                        } else {
+                            ids.push(id);
+                        }
+                        ids.sort();
+                        if let Ok(bs) = bincode::serialize(&ids) {
                             return Some(bs);
                         }
                         return None;
@@ -112,7 +164,7 @@ impl Namespace {
                     None
                 }
                 None => {
-                    if let Ok(bs) = bincode::serialize(&vec![hash]) {
+                    if let Ok(bs) = bincode::serialize(&vec![id]) {
                         return Some(bs);
                     }
                     None
@@ -120,12 +172,13 @@ impl Namespace {
             }
         };
         self.labels.update_and_fetch(label.key(), upsert)?;
+
         Ok(())
     }
 
     /// Get an object by ID
     pub fn get(&self, id: u64) -> Result<Option<Bytes>> {
-        match self.blobs.get(bincode::serialize(&id)?) {
+        match self.blobs.get(bincode::serialize(&format!("{id}"))?) {
             Ok(Some(blob)) => Ok(Some(Bytes::from(blob.to_vec()))),
             Ok(None) => Ok(None),
             Err(e) => {
@@ -141,7 +194,7 @@ impl Namespace {
             let labels = self.labels.clone();
             match labels.get(label.key()) {
                 Ok(Some(bytes)) => {
-                    let hashes: Vec<u64> = match bincode::deserialize::<Vec<u64>>(&bytes) {
+                    let ids: Vec<u64> = match bincode::deserialize::<Vec<u64>>(&bytes) {
                         Ok(h) => {
                             log::debug!(target: "mango_chainsaw", "[{}] found {} matches for {label}", self.name, h.len());
                             h
@@ -151,7 +204,7 @@ impl Namespace {
                             vec![]
                         },
                     };
-                    hashes
+                    ids
                 },
                 Ok(None) => {
                     log::debug!(target: "mango_chainsaw", "[{}] found no matches for {label}", self.name);
@@ -170,23 +223,113 @@ impl Namespace {
         for other in others {
             intersection.retain(|e| other.contains(e))
         }
-        Ok(Vec::from_iter(&mut intersection.iter().copied()))
+        let mut matches = Vec::from_iter(&mut intersection.iter().copied());
+        matches.sort();
+        Ok(matches)
     }
 
     /// Delete objects with the given ids.
-    pub fn delete_objects(&self, ids: Vec<u64>) -> Result<()> {
-        for id in ids {
-            match self.blobs.remove(bincode::serialize(&id)?) {
-                Ok(_) => {
-                    log::debug!(target: "mango_chainsaw", "[{}] removed blob {id}", self.name);
-                }
-                Err(e) => {
-                    log::error!(target: "mango_chainsaw", "[{}] failed to remove blob {id}: {e}", self.name);
-                    return Err(e.into());
-                }
+    pub fn delete_blob(&self, id: u64) -> Result<()> {
+        match self.blobs.remove(bincode::serialize(&format!("{id}"))?) {
+            Ok(Some(_)) => {
+                log::debug!(target: "mango_chainsaw", "[{}] removed blob {id}", self.name);
+            }
+            Ok(None) => {
+                log::warn!(target: "mango_chainsaw", "[{}] got None when removing blob {id}", self.name);
+            }
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "[{}] failed to remove blob {id}: {e}", self.name);
+                return Err(e.into());
             }
         }
+        self.cleanup(id)?;
         Ok(())
+    }
+
+    /// Clean up after deleted blobs
+    ///
+    /// This walks the relations tree. Entries that do not have a blob have label data that needs to be cleaned up after.
+    pub(crate) fn cleanup(&self, id: u64) -> Result<()> {
+        let key = bincode::serialize(&id)?;
+        log::info!(target: "mango_chainsaw", "into cleanup");
+        let labels: Vec<String> = match self.blobs_labels.get(key) {
+            Ok(Some(bytes)) => bincode::deserialize(&bytes)?,
+            Ok(None) => vec![],
+            Err(e) => {
+                log::error!(target: "mango_chainsaw", "[{}] failed to clean up relation for blob {id}: {e}", self.name);
+                return Err(e.into());
+            }
+        };
+        let res: Vec<String> = labels.into_par_iter().filter_map(|label| {
+            log::info!(target: "mango_chainsaw", "into iter {label}");
+            let key = match bincode::serialize(&label) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    log::error!(target: "mango_chainsaw", "[{}] failed to serialize relation key for blob {id}: {e}", self.name);
+                    return None
+                },
+            };
+
+            // Get the blob ids for this label
+            let mut ids: Vec<u64> = match self.labels.get(&key) {
+                Ok(Some(bytes)) => match bincode::deserialize::<Vec<u64>>(&bytes) {
+                    Ok(h) => {
+                        log::debug!(target: "mango_chainsaw", "[{}] got {} ids for label {label}", self.name, h.len());
+                        h
+                    },
+                    Err(e) => {
+                        log::error!(target: "mango_chainsaw", "[{}] failed to deserialize label {label}: {e}", self.name);
+                        return Some(label)
+                    },
+                },
+                Ok(None) => {
+                    log::error!(target: "mango_chainsaw", "[{}] found no label {label}", self.name);
+                    return Some(label)
+                },
+                Err(e) => {
+                    log::error!(target: "mango_chainsaw", "[{}] failed to get label {label}: {e}", self.name);
+                    return Some(label)
+                },
+            };
+            // remove our target id
+            ids.retain(|item| item != &id);
+            ids.sort();
+
+            // If this label is empty, delete it
+            if ids.is_empty() {
+                match self.labels.remove(&key) {
+                    Ok(_) => log::info!(target: "mango_chainsaw", "[{}] removed unused label {label}", self.name),
+                    Err(e) => {
+                        log::error!(target: "mango_chainsaw", "[{}] failed to remove unused label {label}: {e}", self.name);
+                        return Some(label)
+                    },
+                }
+            } else {
+                // If the label still has ids, store it
+                let bytes = match bincode::serialize(&ids) {
+                    Ok(bs) => bs,
+                    Err(e) => {
+                        log::error!(target: "mango_chainsaw", "[{}] failed to serialize label {label}: {e}", self.name);
+                        return Some(label)
+                    },
+                };
+                match self.labels.insert(&key, bytes) {
+                    Ok(_) => log::debug!(target: "mango_chainsaw", "[{}] updated label {label} with new ids list", self.name),
+                    Err(e) => {
+                        log::error!(target: "mango_chainsaw", "[{}] failed to update label {label}: {e}", self.name);
+                        return Some(label)
+                    },
+                }
+            }
+            None
+        }).collect();
+        // Labels still in this list had a problem during cleanup
+        if res.is_empty() {
+            Ok(())
+        } else {
+            log::error!(target: "mango_chainsaw", "[{}] some labels failed during cleanup: {res:#?}", self.name);
+            Ok(())
+        }
     }
 
     /// Get namespace stats
@@ -201,27 +344,6 @@ impl Namespace {
         };
         Ok(stats)
     }
-
-    // WIP
-    // pub fn prune(&self) -> Result<()> {
-    //     log::info!(target: "mango_chainsaw", "starting prune on namespace {}", self.name);
-    //     let ids: Vec<u64> = self.blobs.into_iter().keys().map(|key| match key {
-    //         Ok(k) => match bincode::deserialize::<u64>(&k) {
-    //             Ok(id) => id,
-    //             Err(e) => {
-    //                 log::error!(target: "mango_chainsaw", "[{}] error deserializing key during prune {e}", self.name);
-    //                 0
-    //             }
-    //         },
-    //         Err(e) => {
-    //             log::error!(target: "mango_chainsaw", "[{}] error pruning {e}", self.name);
-    //             0
-    //         }
-    //     }).filter(|id| id != &0).collect();
-    //     log::info!(target: "mango_chainsaw", "[{}] found {} stored blobs", ids.len(), self.name);
-
-    //     Ok(())
-    // }
 }
 
 #[derive(Serialize, Deserialize, Clone, ToSchema, ToResponse)]
