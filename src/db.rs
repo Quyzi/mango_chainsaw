@@ -49,8 +49,9 @@ impl DB {
                 } else {
                     let name = tree.to_owned();
                     Some(
-                        name.trim_end_matches("_labels")
-                            .trim_end_matches("_blobs")
+                        name.trim_end_matches(&format!("{SEPARATOR}labels"))
+                            .trim_end_matches(&format!("{SEPARATOR}blobs"))
+                            .trim_end_matches(&format!("{SEPARATOR}relations"))
                             .to_string(),
                     )
                 }
@@ -81,15 +82,15 @@ impl DB {
         Ok(trees)
     }
 
-    pub async fn start_server(&self, address: String, port: u16) -> Result<()> {
+    pub async fn serve(&self, address: String, port: u16) -> Result<()> {
         let outer = self.clone();
         HttpServer::new(move || {
-            let stats = outer.clone();
+            let db = outer.clone();
             App::new()
                 .wrap(Logger::default())
                 .wrap(Compress::default())
-                .app_data(web::Data::new(stats))
-                .configure(crate::api::v3::configure)
+                .app_data(web::Data::new(db))
+                .configure(crate::api::server::configure)
         })
         .bind((address, port))?
         .run()

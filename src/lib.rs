@@ -8,6 +8,8 @@ pub mod namespace;
 mod tests;
 
 pub(crate) mod internal {
+    pub const SEPARATOR: &str = "\u{1F}";
+    
     pub use crate::errors::MangoChainsawError;
     pub use crate::errors::Result;
 

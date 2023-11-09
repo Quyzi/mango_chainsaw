@@ -30,13 +30,13 @@ impl Namespace {
     pub(crate) fn new(db: &DB, name: &str) -> Result<Self> {
         let blobs = db
             .inner
-            .open_tree(bincode::serialize(&format!("{name}_blobs"))?)?;
+            .open_tree(bincode::serialize(&format!("{name}{SEPARATOR}blobs"))?)?;
         let labels = db
             .inner
-            .open_tree(bincode::serialize(&format!("{name}_labels"))?)?;
+            .open_tree(bincode::serialize(&format!("{name}{SEPARATOR}labels"))?)?;
         let relations = db
             .inner
-            .open_tree(bincode::serialize(&format!("{name}_relation"))?)?;
+            .open_tree(bincode::serialize(&format!("{name}{SEPARATOR}relations"))?)?;
 
         Ok(Self {
             name: name.to_string(),
@@ -52,7 +52,7 @@ impl Namespace {
         for tree in ["blobs", "labels", "relations"] {
             match db
                 .inner
-                .drop_tree(bincode::serialize(&format!("{name}_{tree}"))?)
+                .drop_tree(bincode::serialize(&format!("{name}{SEPARATOR}{tree}"))?)
             {
                 Ok(r) => {
                     log::debug!(target: "mango_chainsaw", "[{}] dropped tree {name}_{tree}, result: {r}", self.name)
@@ -339,18 +339,22 @@ impl Namespace {
             name: self.name.to_string(),
             blob_checksum: self.blobs.checksum()?,
             labels_checksum: self.labels.checksum()?,
+            relations_checksum: self.blobs_labels.checksum()?,
             blobs_count: self.blobs.len(),
             labels_count: self.labels.len(),
+            relations_count: self.blobs_labels.len(),
         };
         Ok(stats)
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, ToSchema, ToResponse)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, ToResponse)]
 pub struct NamespaceStats {
     pub name: String,
     pub blob_checksum: u32,
     pub labels_checksum: u32,
+    pub relations_checksum: u32,
     pub blobs_count: usize,
+    pub relations_count: usize,
     pub labels_count: usize,
 }

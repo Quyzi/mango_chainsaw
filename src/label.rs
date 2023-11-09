@@ -1,8 +1,7 @@
+use crate::internal::*;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::Display;
 use utoipa::{ToResponse, ToSchema};
-
-const SEPARATOR: &str = "\u{1F}";
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ToSchema, ToResponse)]
 pub struct Label {

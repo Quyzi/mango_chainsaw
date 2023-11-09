@@ -42,7 +42,7 @@ pub async fn main() -> Result<()> {
     let db = DB::new(&args.path)?;
 
     log::info!("Starting server at http://{}:{}", &args.address, &args.port);
-    db.start_server(args.address.to_owned(), args.port.to_owned())
+    db.serve(args.address.to_owned(), args.port.to_owned())
         .await?;
 
     log::info!("Stopping server at http://{}:{}", &args.address, &args.port);
