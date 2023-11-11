@@ -22,6 +22,10 @@ impl DB {
         })
     }
 
+    pub fn next_id(&self) -> Result<u64> {
+        Ok(self.inner.generate_id()?)
+    }
+
     pub fn open_namespace(&self, name: &str) -> Result<Namespace> {
         log::trace!(target: "mango_chainsaw", "opening namespace {}", name);
 

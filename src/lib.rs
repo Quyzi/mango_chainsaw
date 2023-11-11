@@ -6,6 +6,8 @@ pub mod namespace;
 
 #[cfg(test)]
 mod tests;
+pub mod traits;
+pub mod storeableitem;
 
 pub(crate) mod internal {
     pub use crate::errors::MangoChainsawError;
