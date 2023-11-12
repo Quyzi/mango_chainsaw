@@ -1,7 +1,6 @@
-use std::{path::PathBuf, hash::Hash, marker::PhantomData};
-use serde_derive::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
 use crate::storage::*;
+use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 pub trait Store<'a>: Clone {
     type Error;
@@ -11,7 +10,9 @@ pub trait Store<'a>: Clone {
     type Shard: StoreShard<'a>;
 
     /// Open the inner storage db
-    fn open(config: Self::Config) -> Result<Self, Self::Error> where Self: Sized;
+    fn open(config: Self::Config) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
 
     /// Get the inner storage db
     fn get_inner(&self) -> Self::Db;
@@ -26,7 +27,6 @@ pub trait Store<'a>: Clone {
     fn drop_shard(&self, name: &str) -> Result<bool, Self::Error>;
 }
 
-
 /// Default Sled Storage
 #[derive(Clone)]
 pub struct DefaultStore {
@@ -40,12 +40,13 @@ impl<'a> Store<'a> for DefaultStore {
     type Db = sled::Db;
     type Item = DefaultItem;
     type Shard = DefaultStorageShard;
-    
-    fn open(config: Self::Config) -> Result<Self, Self::Error> where Self: Sized {
+
+    fn open(config: Self::Config) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
         let db = config.open().map_err(|e| format!("{e}"))?;
-        Ok(Self {
-            config, db
-        })
+        Ok(Self { config, db })
     }
 
     fn get_inner(&self) -> Self::Db {
@@ -61,12 +62,9 @@ impl<'a> Store<'a> for DefaultStore {
         Ok(shard)
     }
 
-    fn drop_shard(&self, name: &str) -> Result<bool, Self::Error> {
+    fn drop_shard(&self, _name: &str) -> Result<bool, Self::Error> {
         todo!()
     }
-
-    
-    
 }
 
 /// Default Item
@@ -76,4 +74,3 @@ pub struct DefaultItem {
     pub inner: JsonValue,
 }
 impl Storeable for DefaultItem {}
-

@@ -1,8 +1,11 @@
-use std::{time::{SystemTime, UNIX_EPOCH}, collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
+use std::{
+    hash::{Hash, Hasher},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use bytes::Bytes;
-use serde_derive::{Serialize, Deserialize};
 use crate::storeableitem::*;
+use bytes::Bytes;
+use serde_derive::{Deserialize, Serialize};
 
 pub type Error = String;
 pub type Result<T> = std::result::Result<T, Error>;
@@ -26,13 +29,17 @@ fn new_thing() -> Result<TestyThing> {
     let mut nums: Vec<u128> = vec![];
     let b = now % 409 == 0;
     let s = format!("{now}");
-    let ss: Vec<String> = (0..now%17).enumerate().map(|(_, n)| {nums.push(n); format!("{n}")}).collect();
+    let ss: Vec<String> = (0..now % 17)
+        .enumerate()
+        .map(|(_, n)| {
+            nums.push(n);
+            format!("{n}")
+        })
+        .collect();
     let n = now % 239;
     let nn = nums;
-    
-    Ok(TestyThing {
-        b, s, ss, n, nn
-    })
+
+    Ok(TestyThing { b, s, ss, n, nn })
 }
 
 #[test]

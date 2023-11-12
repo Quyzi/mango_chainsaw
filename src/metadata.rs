@@ -1,19 +1,23 @@
 use bytes::Bytes;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub trait Metadata<'a> {
     type Error;
     type Item: MetadataItem<'a>;
     type ObjectId;
 
-    fn new(id: Self::ObjectId, items: Vec<Self::Item>) -> Result<Self, Self::Error> where Self: Sized;
-    
+    fn new(id: Self::ObjectId, items: Vec<Self::Item>) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
+
     fn items(&self) -> Vec<Self::Item>;
     fn id(&self) -> Self::ObjectId;
     fn db_key(&self) -> Result<Vec<u8>, Self::Error>;
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
-    fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error> where Self: Sized;
+    fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -27,8 +31,14 @@ impl<'a> Metadata<'a> for DefaultMetadata {
     type Item = DefaultMetadataItem;
     type ObjectId = u64;
 
-    fn new(id: Self::ObjectId, items: Vec<Self::Item>) -> Result<Self, Self::Error> where Self: Sized {
-        Ok(Self { objectid: id, items })
+    fn new(id: Self::ObjectId, items: Vec<Self::Item>) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            objectid: id,
+            items,
+        })
     }
 
     fn items(&self) -> Vec<Self::Item> {
@@ -47,11 +57,13 @@ impl<'a> Metadata<'a> for DefaultMetadata {
         bincode::serialize(&self).map_err(|e| format!("{e}"))
     }
 
-    fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error> where Self: Sized {
+    fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+    {
         bincode::deserialize(bytes).map_err(|e| format!("{e}"))
     }
 }
-
 
 pub trait MetadataItem<'a> {
     type Error;
@@ -71,7 +83,7 @@ pub const DEFAULT_SEPARATOR: &str = "\u{001F}";
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DefaultMetadataItem {
     pub key: String,
-    pub value: String
+    pub value: String,
 }
 
 impl<'a> MetadataItem<'a> for DefaultMetadataItem {
@@ -79,7 +91,7 @@ impl<'a> MetadataItem<'a> for DefaultMetadataItem {
     type Key = String;
     type Value = String;
 
-    fn new(k: Self::Key, v: Self::Value) -> Self {
+    fn new(_k: Self::Key, _v: Self::Value) -> Self {
         todo!()
     }
 
@@ -96,10 +108,10 @@ impl<'a> MetadataItem<'a> for DefaultMetadataItem {
     }
 
     fn key_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&format!("{}", self.key())).map_err(|e| format!("{e}"))
+        bincode::serialize(&self.key().to_string()).map_err(|e| format!("{e}"))
     }
 
     fn val_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&format!("{}", self.value())).map_err(|e| format!("{e}"))
+        bincode::serialize(&self.value().to_string()).map_err(|e| format!("{e}"))
     }
 }
