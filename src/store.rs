@@ -1,4 +1,4 @@
-use crate::storage::*;
+use crate::storage::{*, self};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -24,7 +24,7 @@ pub trait Store<'a>: Clone {
     fn open_shard(&self, name: &str) -> Result<Self::Shard, Self::Error>;
 
     /// Drop a named shard
-    fn drop_shard(&self, name: &str) -> Result<bool, Self::Error>;
+    fn drop_shard(&self, shard: Self::Shard) -> Result<bool, Self::Error>;
 }
 
 /// Default Sled Storage
@@ -35,7 +35,7 @@ pub struct DefaultStore {
 }
 
 impl<'a> Store<'a> for DefaultStore {
-    type Error = String;
+    type Error = storage::Error;
     type Config = sled::Config;
     type Db = sled::Db;
     type Item = DefaultItem;
@@ -45,7 +45,7 @@ impl<'a> Store<'a> for DefaultStore {
     where
         Self: Sized,
     {
-        let db = config.open().map_err(|e| format!("{e}"))?;
+        let db = config.open()?;
         Ok(Self { config, db })
     }
 
@@ -62,8 +62,8 @@ impl<'a> Store<'a> for DefaultStore {
         Ok(shard)
     }
 
-    fn drop_shard(&self, _name: &str) -> Result<bool, Self::Error> {
-        todo!()
+    fn drop_shard(&self, shard: Self::Shard) -> Result<bool, Self::Error> {
+        shard.drop()
     }
 }
 

@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
+use crate::storage;
+
 pub trait Metadata<'a> {
     type Error;
     type Item: MetadataItem<'a>;
@@ -27,7 +29,7 @@ pub struct DefaultMetadata {
 }
 
 impl<'a> Metadata<'a> for DefaultMetadata {
-    type Error = String;
+    type Error = storage::Error;
     type Item = DefaultMetadataItem;
     type ObjectId = u64;
 
@@ -50,18 +52,18 @@ impl<'a> Metadata<'a> for DefaultMetadata {
     }
 
     fn db_key(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&self.id()).map_err(|e| format!("{e}"))
+        Ok(bincode::serialize(&self.id())?)
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&self).map_err(|e| format!("{e}"))
+        Ok(bincode::serialize(&self)?)
     }
 
     fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        bincode::deserialize(bytes).map_err(|e| format!("{e}"))
+        Ok(bincode::deserialize(bytes)?)
     }
 }
 
@@ -87,7 +89,7 @@ pub struct DefaultMetadataItem {
 }
 
 impl<'a> MetadataItem<'a> for DefaultMetadataItem {
-    type Error = String;
+    type Error = storage::Error;
     type Key = String;
     type Value = String;
 
@@ -108,10 +110,10 @@ impl<'a> MetadataItem<'a> for DefaultMetadataItem {
     }
 
     fn key_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&self.key().to_string()).map_err(|e| format!("{e}"))
+        Ok(bincode::serialize(&self.key().to_string())?)
     }
 
     fn val_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&self.value().to_string()).map_err(|e| format!("{e}"))
+        Ok(bincode::serialize(&self.value().to_string())?)
     }
 }

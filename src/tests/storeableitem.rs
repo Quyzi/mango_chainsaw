@@ -3,12 +3,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::storeableitem::*;
+use crate::item::*;
+use crate::storage;
 use bytes::Bytes;
 use serde_derive::{Deserialize, Serialize};
 
 pub type Error = String;
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, storage::Error>;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
 pub struct TestyThing {
@@ -23,7 +24,7 @@ impl Storeable for TestyThing {}
 fn new_thing() -> Result<TestyThing> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("{e}"))?
+        .map_err(|e| storage::Error::Other(format!("{e}")))?
         .as_millis();
 
     let mut nums: Vec<u128> = vec![];
