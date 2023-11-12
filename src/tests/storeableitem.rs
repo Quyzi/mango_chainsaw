@@ -15,6 +15,7 @@ pub struct TestyThing {
     pub n: u128,
     pub nn: Vec<u128>,
 }
+impl Storeable for TestyThing {}
 
 fn new_thing() -> Result<TestyThing> {
     let now = SystemTime::now()
@@ -37,26 +38,15 @@ fn new_thing() -> Result<TestyThing> {
 #[test]
 fn test_storeable_item() -> Result<()> {
     let this = new_thing()?;
-    let thishash = {
-        let mut hasher = DefaultHasher::new();
-        this.hash(&mut hasher);
-        hasher.finish()
-    };
+    let thishash = this.try_hash()?;
 
     let bytes = this.to_vec()?;
     let that = TestyThing::from_vec(&Bytes::from(bytes))?;
-    let thathash = {
-        let mut hasher = DefaultHasher::new();
-        that.hash(&mut hasher);
-        hasher.finish()
-    };
-
-    let hb = bincode::serialize(&thathash).map_err(|e| format!("{e}"))?;
+    let thathash = that.try_hash()?;
 
     assert_eq!(this, that);
     assert_eq!(thishash, thathash);
-    assert_eq!(this.key(), Ok(hb.clone()));
-    assert_eq!(that.key(), Ok(hb.clone()));
+    assert_eq!(this.hashkey()?, that.hashkey()?);
     println!("{thishash} :: {thathash}");
     Ok(())
 }
