@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use flexbuffers::FlexbufferSerializer;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
@@ -15,7 +16,7 @@ pub trait StoreableItem<'a> {
     fn to_vec(&self) -> Result<Vec<u8>, Self::Error>;
 
     /// Create a StoreableItem from a Bytes
-    fn from_bytes(bytes: Bytes) -> Result<Self, Self::Error>
+    fn from_bytes(bytes: &'a Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized;
 
@@ -23,29 +24,27 @@ pub trait StoreableItem<'a> {
     fn hashkey(&self) -> Result<Vec<u8>, Self::Error>;
 }
 
-impl<'a, T: Serialize + Storeable + DeserializeOwned> StoreableItem<'a> for T {
+impl<'a, T: Serialize + Storeable + Deserialize<'a>> StoreableItem<'a> for T {
     type Hasher = DefaultHasher;
     type Error = storage::Error;
 
     fn to_vec(&self) -> Result<Vec<u8>, Self::Error> {
-        match bincode::serialize(&self) {
-            Ok(bs) => Ok(bs),
-            Err(e) => Err(e.into()),
-        }
+        let mut s = FlexbufferSerializer::new();
+        self.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 
-    fn from_bytes(bytes: Bytes) -> Result<Self, Self::Error>
+    fn from_bytes(bytes: &'a Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        match bincode::deserialize_from(bytes.as_ref()) {
-            Ok(this) => Ok(this),
-            Err(e) => Err(e.into()),
-        }
+        Ok(flexbuffers::from_slice(&bytes)? )
     }
 
     fn hashkey(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(bincode::serialize(&format!("{}", self.try_hash()?))?)
+        let mut s = FlexbufferSerializer::new();
+        self.try_hash()?.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 }
 
@@ -62,7 +61,9 @@ impl<'a, T: Serialize + Deserialize<'a> + Storeable> TryHash<'a> for T {
 
     fn try_hash(&self) -> Result<u64, Self::Error> {
         let mut hasher = DefaultHasher::new();
-        let bytes = bincode::serialize(&self)?;
+        let mut s = FlexbufferSerializer::new();
+        self.serialize(&mut s)?;
+        let bytes: Vec<u8> = s.take_buffer();
         bytes.hash(&mut hasher);
         Ok(hasher.finish())
     }

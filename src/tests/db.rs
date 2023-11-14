@@ -1,3 +1,7 @@
+use bytes::Bytes;
+use serde_json::json;
+use storage::{StoreableItem, DefaultItem};
+
 use super::item::new_thing;
 use crate::storage::{self, DefaultStore, Store, StoreShard};
 
@@ -11,10 +15,18 @@ fn test_db() -> Result<()> {
     let shard = store.open_shard("testing")?;
 
     let thing = new_thing()?;
-    let item = thing.try_into()?;
-    
-    let id = shard.insert(item, vec![])?;
+    let item = DefaultItem { inner: json!(thing) };
 
+    let id = shard.insert(item.clone(), vec![])?;
+
+    let got = match shard.get(id)? {
+        Some(got) => got,
+        None => return Err(storage::Error::Other(format!("oops"))),
+    };
+
+    assert_eq!(item, got);
+
+    println!("{id}");
 
     Ok(())
 }

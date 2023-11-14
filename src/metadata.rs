@@ -52,18 +52,22 @@ impl<'a> Metadata<'a> for DefaultMetadata {
     }
 
     fn db_key(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(bincode::serialize(&self.id())?)
+        let mut s = flexbuffers::FlexbufferSerializer::new();
+        self.objectid.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(bincode::serialize(&self)?)
+        let mut s = flexbuffers::FlexbufferSerializer::new();
+        self.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 
     fn from_bytes(bytes: &Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(bytes)?)
+        Ok(flexbuffers::from_slice(&bytes)?)
     }
 }
 
@@ -110,10 +114,14 @@ impl<'a> MetadataItem<'a> for DefaultMetadataItem {
     }
 
     fn key_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(bincode::serialize(&self.key().to_string())?)
+        let mut s = flexbuffers::FlexbufferSerializer::new();
+        self.key.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 
     fn val_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(bincode::serialize(&self.value().to_string())?)
+        let mut s = flexbuffers::FlexbufferSerializer::new();
+        self.value.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 }

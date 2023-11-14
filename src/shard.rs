@@ -161,7 +161,7 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
         match self.objects.get(&key) {
             Ok(Some(thing)) => {
                 let bytes = Bytes::from(thing.to_vec());
-                Ok(Some(DefaultItem::from_bytes(bytes)?))
+                Ok(Some(DefaultItem::from_bytes(&bytes)?))
             },
             Ok(None) => Ok(None),
             Err(e) => Err(e.into()),
@@ -199,7 +199,7 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
         match self.objects.remove(&key) {
             Ok(Some(old)) => {
                 let bytes = Bytes::from(old.to_vec());
-                Ok(Some(Self::Item::from_bytes(bytes)?))
+                Ok(Some(Self::Item::from_bytes(&bytes)?))
             },
             Ok(None) => Ok(None),
             Err(e) => Err(e.into()),

@@ -1,11 +1,11 @@
 use std::{
     hash::Hash,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH}, io::Cursor,
 };
 use crate::item::*;
 use crate::storage;
 use bytes::Bytes;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 use storage::DefaultItem;
 
 pub type Result<T> = std::result::Result<T, storage::Error>;
@@ -15,47 +15,21 @@ pub struct TestyThing {
     pub b: bool,
     pub s: String,
     pub ss: Vec<String>,
-    pub n: u128,
-    pub nn: Vec<u128>,
+    pub n: u64,
+    pub nn: Vec<u64>,
 }
 impl Storeable for TestyThing {}
-
-impl<'de> TryFrom<DefaultItem> for TestyThing {
-    type Error = storage::Error;
-
-    fn try_from(value: DefaultItem) -> std::result::Result<Self, Self::Error> {
-        let bytes = Bytes::from(value.to_vec()?);
-        match bincode::deserialize_from(bytes.as_ref()) {
-            Ok(this) => Ok(this),
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-impl TryInto<DefaultItem> for TestyThing {
-    type Error = storage::Error;
-
-    fn try_into(self) -> std::result::Result<DefaultItem, Self::Error> {
-        match bincode::serialize(&self.to_vec()?) {
-            Ok(bytes) => {
-                let item = DefaultItem::from_bytes(Bytes::from(bytes))?;
-                Ok(item)
-            },
-            Err(e) => Err(e.into()),
-        }
-    }
-}
 
 pub(super) fn new_thing() -> Result<TestyThing> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| storage::Error::Other(format!("{e}")))?
-        .as_millis();
+        .as_secs();
 
-    let mut nums: Vec<u128> = vec![];
+    let mut nums: Vec<u64> = vec![];
     let b = now % 409 == 0;
     let s = format!("{now}");
-    let ss: Vec<String> = (0..now % 17)
+    let ss: Vec<String> = (0..now % 17 + 2)
         .enumerate()
         .map(|(_, n)| {
             nums.push(n);
@@ -74,12 +48,26 @@ fn test_storeable_item() -> Result<()> {
     let thishash = this.try_hash()?;
 
     let bytes = this.to_vec()?;
-    let that = TestyThing::from_bytes(Bytes::from(bytes))?;
+    let that = TestyThing::from_bytes(&Bytes::from(bytes))?;
     let thathash = that.try_hash()?;
 
     assert_eq!(this, that);
     assert_eq!(thishash, thathash);
     assert_eq!(this.hashkey()?, that.hashkey()?);
     println!("{thishash} :: {thathash}");
+    Ok(())
+}
+
+
+#[test]
+fn test_flexbuf() -> Result<()> {
+    let mut ser = flexbuffers::FlexbufferSerializer::new();
+    let this = new_thing()?;
+    this.serialize(&mut ser)?;
+    let this_bytes = ser.take_buffer();
+    let that = flexbuffers::from_slice(&this_bytes)?;
+
+    assert_eq!(this, that);
+
     Ok(())
 }

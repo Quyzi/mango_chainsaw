@@ -12,8 +12,14 @@ pub enum Error {
     #[error("sled transaction error {0}")]
     TransactionError(#[from] sled::transaction::TransactionError),
 
-    #[error("bincode error {0}")]
-    BincodeError(#[from] Box<bincode::ErrorKind>),
+    #[error("flexbuffer serialization error {0}")]
+    FlexSerError(#[from] flexbuffers::SerializationError),
+
+    #[error("flexbuffer deserialization error {0}")]
+    FlexDeError(#[from] flexbuffers::DeserializationError),
+
+    #[error("flexbuffer reader error {0}")]
+    FlexReaderError(#[from] flexbuffers::ReaderError),
     
     #[error("other error {0}")]
     Other(String),

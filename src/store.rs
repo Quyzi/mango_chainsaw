@@ -1,5 +1,9 @@
 use crate::storage::{*, self};
-use serde_derive::{Deserialize, Serialize};
+use bytes::Bytes;
+use bytes::BytesMut;
+use serde::de::Visitor;
+use serde_derive::Deserialize;
+use serde_derive::Serialize;
 use serde_json::Value as JsonValue;
 
 pub trait Store<'a>: Clone {
@@ -68,9 +72,10 @@ impl<'a> Store<'a> for DefaultStore {
 }
 
 /// Default Item
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct DefaultItem {
-    #[serde(flatten)]
+    
     pub inner: JsonValue,
 }
+
 impl Storeable for DefaultItem {}
