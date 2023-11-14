@@ -3,6 +3,9 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum Error {
 
+    #[error("io error {0}")]
+    IoError(#[from] std::io::Error),
+
     #[error("sled error {0}")]
     SledError(#[from] sled::Error),
 

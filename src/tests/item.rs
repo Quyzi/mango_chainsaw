@@ -1,14 +1,13 @@
 use std::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     time::{SystemTime, UNIX_EPOCH},
 };
-
 use crate::item::*;
 use crate::storage;
 use bytes::Bytes;
 use serde_derive::{Deserialize, Serialize};
+use storage::DefaultItem;
 
-pub type Error = String;
 pub type Result<T> = std::result::Result<T, storage::Error>;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
@@ -21,7 +20,33 @@ pub struct TestyThing {
 }
 impl Storeable for TestyThing {}
 
-fn new_thing() -> Result<TestyThing> {
+impl<'de> TryFrom<DefaultItem> for TestyThing {
+    type Error = storage::Error;
+
+    fn try_from(value: DefaultItem) -> std::result::Result<Self, Self::Error> {
+        let bytes = Bytes::from(value.to_vec()?);
+        match bincode::deserialize_from(bytes.as_ref()) {
+            Ok(this) => Ok(this),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+impl TryInto<DefaultItem> for TestyThing {
+    type Error = storage::Error;
+
+    fn try_into(self) -> std::result::Result<DefaultItem, Self::Error> {
+        match bincode::serialize(&self.to_vec()?) {
+            Ok(bytes) => {
+                let item = DefaultItem::from_bytes(Bytes::from(bytes))?;
+                Ok(item)
+            },
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+pub(super) fn new_thing() -> Result<TestyThing> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| storage::Error::Other(format!("{e}")))?
@@ -49,7 +74,7 @@ fn test_storeable_item() -> Result<()> {
     let thishash = this.try_hash()?;
 
     let bytes = this.to_vec()?;
-    let that = TestyThing::from_vec(&Bytes::from(bytes))?;
+    let that = TestyThing::from_bytes(Bytes::from(bytes))?;
     let thathash = that.try_hash()?;
 
     assert_eq!(this, that);

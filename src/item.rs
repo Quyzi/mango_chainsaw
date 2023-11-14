@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
@@ -14,7 +15,7 @@ pub trait StoreableItem<'a> {
     fn to_vec(&self) -> Result<Vec<u8>, Self::Error>;
 
     /// Create a StoreableItem from a Bytes
-    fn from_vec(bytes: &'a Bytes) -> Result<Self, Self::Error>
+    fn from_bytes(bytes: Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized;
 
@@ -22,7 +23,7 @@ pub trait StoreableItem<'a> {
     fn hashkey(&self) -> Result<Vec<u8>, Self::Error>;
 }
 
-impl<'a, T: Serialize + Deserialize<'a> + Storeable> StoreableItem<'a> for T {
+impl<'a, T: Serialize + Storeable + DeserializeOwned> StoreableItem<'a> for T {
     type Hasher = DefaultHasher;
     type Error = storage::Error;
 
@@ -33,15 +34,14 @@ impl<'a, T: Serialize + Deserialize<'a> + Storeable> StoreableItem<'a> for T {
         }
     }
 
-    fn from_vec(bytes: &'a Bytes) -> Result<Self, Self::Error>
+    fn from_bytes(bytes: Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        let this = match bincode::deserialize(bytes) {
-            Ok(this) => this,
-            Err(e) => return Err(e.into()),
-        };
-        Ok(this)
+        match bincode::deserialize_from(bytes.as_ref()) {
+            Ok(this) => Ok(this),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn hashkey(&self) -> Result<Vec<u8>, Self::Error> {

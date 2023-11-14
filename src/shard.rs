@@ -1,6 +1,7 @@
 use crate::storage::{self, Store};
+use bytes::Bytes;
 use rayon::prelude::*;
-use storage::{Metadata, StoreableItem, MetadataItem};
+use storage::{Metadata, StoreableItem, MetadataItem, DefaultMetadata, DefaultItem};
 use sled::Transactional;
 
 pub trait StoreShard<'a> {
@@ -156,11 +157,34 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
     }
 
     fn get(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error> {
-        todo!()
+        let key = DefaultMetadata::new(id, vec![])?.db_key()?;
+        match self.objects.get(&key) {
+            Ok(Some(thing)) => {
+                let bytes = Bytes::from(thing.to_vec());
+                Ok(Some(DefaultItem::from_bytes(bytes)?))
+            },
+            Ok(None) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
-    fn get_many(&self, _ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
-        todo!()
+    fn get_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
+        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> = ids.into_par_iter().map(|id| (id, self.get(id))).collect();
+        let mut objects = vec![];
+        let mut errors = vec![];
+        for (id, result) in results {
+            match result {
+                Ok(inner) => objects.push((id, inner)),
+                Err(e) => {
+                    errors.push(e.to_string());
+                    objects.push((id, None))
+                }
+            }
+        }
+        if !errors.is_empty() {
+            log::error!(target: "mango_chainsaw", "Encountered one or more errors while getting objects: {errors:?}");
+        }
+        Ok(objects)
     }
 
     fn find(
@@ -171,16 +195,37 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
     }
 
     fn delete(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error> {
-        todo!()
+        let key = DefaultMetadata::new(id, vec![])?.db_key()?;
+        match self.objects.remove(&key) {
+            Ok(Some(old)) => {
+                let bytes = Bytes::from(old.to_vec());
+                Ok(Some(Self::Item::from_bytes(bytes)?))
+            },
+            Ok(None) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn delete_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
-        todo!()
+        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> = ids.into_par_iter().map(|id| (id, self.delete(id))).collect();
+        let (mut objects, mut errors) = (vec![], vec![]);
+        for (id, result) in results {
+            match result {
+                Ok(inner) => objects.push((id, inner)),
+                Err(e) => {
+                    errors.push(e.to_string());
+                    objects.push((id, None))
+                }
+            }
+        }
+        if !errors.is_empty() {
+            log::error!(target: "mango_chainsaw", "Encountered one or more errors while deleting objects: {errors:?}");
+        }
+        Ok(objects)
     }
 
     fn compare_swap_object(&self, id: Self::ObjectId, old: Option<Self::Item>, new: Option<Self::Item>) -> Result<(), Self::Error> {
         todo!()
     }
 
-    
 }
