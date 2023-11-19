@@ -1,8 +1,8 @@
 use crate::storage::{self, Store};
 use bytes::Bytes;
 use rayon::prelude::*;
-use storage::{Metadata, StoreableItem, MetadataItem, DefaultMetadata, DefaultItem};
 use sled::Transactional;
+use storage::{DefaultItem, DefaultMetadata, Metadata, MetadataItem, StoreableItem};
 
 pub trait StoreShard<'a> {
     type Error;
@@ -33,7 +33,10 @@ pub trait StoreShard<'a> {
     fn get(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error>;
 
     /// Get many objects from this shard by id
-    fn get_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error>;
+    fn get_many(
+        &self,
+        ids: Vec<Self::ObjectId>,
+    ) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error>;
 
     /// Find objects in this shard with the given Metadata items
     fn find(
@@ -45,18 +48,25 @@ pub trait StoreShard<'a> {
     fn delete(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error>;
 
     /// Delete many objects from this shard by id
-    fn delete_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error>;
+    fn delete_many(
+        &self,
+        ids: Vec<Self::ObjectId>,
+    ) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error>;
 
-    /// Compare and swap. 
-    /// Capable of unique creation, conditional modification, or deletion. 
-    /// 
-    /// If old is None, this will only set the value if it doesn’t exist yet. 
-    /// 
-    /// If new is None, will delete the value if old is correct. 
-    /// 
+    /// Compare and swap.
+    /// Capable of unique creation, conditional modification, or deletion.
+    ///
+    /// If old is None, this will only set the value if it doesn’t exist yet.
+    ///
+    /// If new is None, will delete the value if old is correct.
+    ///
     /// If both old and new are Some, will modify the value if old is correct.
-    fn compare_swap_object(&self, id: Self::ObjectId, old: Option<Self::Item>, new: Option<Self::Item>) -> Result<(), Self::Error>;
-
+    fn compare_swap_object(
+        &self,
+        id: Self::ObjectId,
+        old: Option<Self::Item>,
+        new: Option<Self::Item>,
+    ) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone)]
@@ -80,12 +90,8 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
     where
         Self: Sized,
     {
-        let objects = parent
-            .get_inner()
-            .open_tree(format!("{}_objects", &name))?;
-        let labels = parent
-            .get_inner()
-            .open_tree(format!("{}_labels", &name))?;
+        let objects = parent.get_inner().open_tree(format!("{}_objects", &name))?;
+        let labels = parent.get_inner().open_tree(format!("{}_labels", &name))?;
         let metadata = parent
             .get_inner()
             .open_tree(format!("{}_metadata", &name))?;
@@ -105,7 +111,10 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
             db.drop_tree(format!("{}_objects", &self.name)),
             db.drop_tree(format!("{}_labels", &self.name)),
             db.drop_tree(format!("{}_metadata", &self.name)),
-        ].into_par_iter().all(|r| r.is_ok()) {
+        ]
+        .into_par_iter()
+        .all(|r| r.is_ok())
+        {
             Ok(true)
         } else {
             Ok(false)
@@ -123,53 +132,62 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
     ) -> Result<Self::ObjectId, Self::Error> {
         let id = self.parent.get_inner().generate_id()?;
         let metadata = storage::DefaultMetadata::new(id, metadata_items.clone())?;
-        
+
         let obj = (metadata.db_key()?, item.to_vec()?);
         let meta = (metadata.db_key()?, metadata.to_bytes()?);
-        let labels: Vec<(Vec<u8>, Vec<u8>)> = metadata_items.into_par_iter().filter_map(|item| {
-            let key = match item.key_bytes() {
-                Ok(bs) => bs,
-                Err(_e) => return None
-            };
-            let value = match item.val_bytes() {
-                Ok(bs) => bs,
-                Err(_e) => return None,
-            };
-            Some((key, value))
-        }).collect();
+        let labels: Vec<(Vec<u8>, Vec<u8>)> = metadata_items
+            .into_par_iter()
+            .filter_map(|item| {
+                let key = match item.key_bytes() {
+                    Ok(bs) => bs,
+                    Err(_e) => return None,
+                };
+                let value = match item.val_bytes() {
+                    Ok(bs) => bs,
+                    Err(_e) => return None,
+                };
+                Some((key, value))
+            })
+            .collect();
 
-        (&self.objects, &self.labels, &self.metadata).transaction(|(tx_obj, tx_label, tx_metadata)| {
-            let obj = obj.clone();
-            tx_obj.insert(obj.0, obj.1)?;
+        (&self.objects, &self.labels, &self.metadata).transaction(
+            |(tx_obj, tx_label, tx_metadata)| {
+                let obj = obj.clone();
+                tx_obj.insert(obj.0, obj.1)?;
 
-            let labels = labels.clone();
-            for label in labels {
-                tx_label.insert(label.0, label.1)?;
-            }
+                let labels = labels.clone();
+                for label in labels {
+                    tx_label.insert(label.0, label.1)?;
+                }
 
-            let meta = meta.clone();
-            tx_metadata.insert(meta.0, meta.1)?;
+                let meta = meta.clone();
+                tx_metadata.insert(meta.0, meta.1)?;
 
-            Ok(())
-        })?;
-        
+                Ok(())
+            },
+        )?;
+
         Ok(id)
     }
 
     fn get(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error> {
         let key = DefaultMetadata::new(id, vec![])?.db_key()?;
-        match self.objects.get(&key) {
+        match self.objects.get(key) {
             Ok(Some(thing)) => {
                 let bytes = Bytes::from(thing.to_vec());
                 Ok(Some(DefaultItem::from_bytes(&bytes)?))
-            },
+            }
             Ok(None) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn get_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
-        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> = ids.into_par_iter().map(|id| (id, self.get(id))).collect();
+    fn get_many(
+        &self,
+        ids: Vec<Self::ObjectId>,
+    ) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
+        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> =
+            ids.into_par_iter().map(|id| (id, self.get(id))).collect();
         let mut objects = vec![];
         let mut errors = vec![];
         for (id, result) in results {
@@ -196,18 +214,24 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
 
     fn delete(&self, id: Self::ObjectId) -> Result<Option<Self::Item>, Self::Error> {
         let key = DefaultMetadata::new(id, vec![])?.db_key()?;
-        match self.objects.remove(&key) {
+        match self.objects.remove(key) {
             Ok(Some(old)) => {
                 let bytes = Bytes::from(old.to_vec());
                 Ok(Some(Self::Item::from_bytes(&bytes)?))
-            },
+            }
             Ok(None) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn delete_many(&self, ids: Vec<Self::ObjectId>) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
-        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> = ids.into_par_iter().map(|id| (id, self.delete(id))).collect();
+    fn delete_many(
+        &self,
+        ids: Vec<Self::ObjectId>,
+    ) -> Result<Vec<(Self::ObjectId, Option<Self::Item>)>, Self::Error> {
+        let results: Vec<(u64, Result<Option<Self::Item>, Self::Error>)> = ids
+            .into_par_iter()
+            .map(|id| (id, self.delete(id)))
+            .collect();
         let (mut objects, mut errors) = (vec![], vec![]);
         for (id, result) in results {
             match result {
@@ -224,8 +248,12 @@ impl<'a> StoreShard<'a> for DefaultStorageShard {
         Ok(objects)
     }
 
-    fn compare_swap_object(&self, id: Self::ObjectId, old: Option<Self::Item>, new: Option<Self::Item>) -> Result<(), Self::Error> {
+    fn compare_swap_object(
+        &self,
+        _id: Self::ObjectId,
+        _old: Option<Self::Item>,
+        _new: Option<Self::Item>,
+    ) -> Result<(), Self::Error> {
         todo!()
     }
-
 }

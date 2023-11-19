@@ -67,7 +67,7 @@ impl<'a> Metadata<'a> for DefaultMetadata {
     where
         Self: Sized,
     {
-        Ok(flexbuffers::from_slice(&bytes)?)
+        Ok(flexbuffers::from_slice(bytes)?)
     }
 }
 

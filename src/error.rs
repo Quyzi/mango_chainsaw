@@ -2,7 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-
     #[error("io error {0}")]
     IoError(#[from] std::io::Error),
 
@@ -20,7 +19,7 @@ pub enum Error {
 
     #[error("flexbuffer reader error {0}")]
     FlexReaderError(#[from] flexbuffers::ReaderError),
-    
+
     #[error("other error {0}")]
     Other(String),
 }

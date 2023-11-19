@@ -1,10 +1,10 @@
+use crate::storage;
 use bytes::Bytes;
 use flexbuffers::FlexbufferSerializer;
-use serde::de::DeserializeOwned;
+
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
-use crate::storage;
 
 pub trait Storeable {}
 
@@ -38,7 +38,7 @@ impl<'a, T: Serialize + Storeable + Deserialize<'a>> StoreableItem<'a> for T {
     where
         Self: Sized,
     {
-        Ok(flexbuffers::from_slice(&bytes)? )
+        Ok(flexbuffers::from_slice(bytes)?)
     }
 
     fn hashkey(&self) -> Result<Vec<u8>, Self::Error> {

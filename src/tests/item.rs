@@ -1,12 +1,12 @@
-use std::{
-    hash::Hash,
-    time::{SystemTime, UNIX_EPOCH}, io::Cursor,
-};
 use crate::item::*;
 use crate::storage;
 use bytes::Bytes;
-use serde::{Serialize, Deserialize};
-use storage::DefaultItem;
+use serde::{Deserialize, Serialize};
+use std::{
+    hash::Hash,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 
 pub type Result<T> = std::result::Result<T, storage::Error>;
 
@@ -57,7 +57,6 @@ fn test_storeable_item() -> Result<()> {
     println!("{thishash} :: {thathash}");
     Ok(())
 }
-
 
 #[test]
 fn test_flexbuf() -> Result<()> {
