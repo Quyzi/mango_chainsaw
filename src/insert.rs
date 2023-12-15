@@ -13,8 +13,8 @@ use std::{
     sync::Arc,
 };
 
-use crate::{db::Db, namespace::Namespace};
 use crate::common::*;
+use crate::{db::Db, namespace::Namespace};
 
 #[derive(Clone, Default)]
 pub struct InsertRequest {
@@ -26,15 +26,15 @@ pub struct InsertRequest {
 impl InsertRequest {
     /// Create a new InsertRequest using the hash of the payload as the object ID
     pub fn new(payload: Bytes, labels: Vec<Label>) -> Self {
-        let mut this = Self::default();
-        this.id = {
-            let mut hasher = DefaultHasher::new();
-            payload.hash(&mut hasher);
-            hasher.finish()
-        };
-        this.obj = Arc::new(payload);
-        this.labels = HashSet::from_iter(labels.iter().cloned());
-        this
+        Self {
+            id: {
+                let mut hasher = DefaultHasher::new();
+                payload.hash(&mut hasher);
+                hasher.finish()
+            },
+            obj: Arc::new(payload),
+            labels: HashSet::from_iter(labels.iter().cloned()),
+        }
     }
 
     /// Create a new InsertRequest using a monotonic counter to generate the object ID
@@ -79,7 +79,7 @@ impl InsertRequest {
                     // Insert the data
                     tx_data.insert(object_id_bytes.clone(), Self::ser(&*self.obj)?)?;
                     log::debug!(
-                        target: "mango_chainsaw::insert::execute", 
+                        target: "mango_chainsaw::insert::execute",
                         "inserted object with id {id}",
                         id = &self.id,
                     );
@@ -149,23 +149,20 @@ mod tests {
     use bytes::Bytes;
     use log::LevelFilter;
     use serde_json::json;
-    use simplelog::{CombinedLogger, TermLogger, Config, TerminalMode, ColorChoice};
+    use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode};
 
     use crate::db::Db;
 
-    use super::{Label, InsertRequest};
-
+    use super::{InsertRequest, Label};
 
     #[test]
     pub fn test_insert() -> Result<()> {
-        CombinedLogger::init(vec![
-            TermLogger::new(
-                LevelFilter::Debug,
-                Config::default(),
-                TerminalMode::Mixed,
-                ColorChoice::Auto,
-            ),
-        ])?;
+        CombinedLogger::init(vec![TermLogger::new(
+            LevelFilter::Debug,
+            Config::default(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        )])?;
 
         let db = Db::open_temp()?;
         let ns = db.open_namespace("test_insert")?;

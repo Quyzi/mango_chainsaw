@@ -1,10 +1,10 @@
-use anyhow::{Result, anyhow};
+use crate::{common::*, namespace::Namespace};
+use anyhow::{anyhow, Result};
 use flexbuffers::FlexbufferSerializer;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{cell::RefCell, collections::HashSet, fmt::Display};
 use thiserror::Error;
-use crate::{common::*, namespace::Namespace};
 
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
@@ -50,7 +50,7 @@ impl QueryRequest {
 
     pub fn include(&self, label: Label) -> Result<()> {
         if self.is_executed()? {
-            return Err(anyhow!(QueryError::AlreadyExecuted))
+            return Err(anyhow!(QueryError::AlreadyExecuted));
         }
         let mut labels = self.include_labels.try_borrow_mut()?;
         labels.insert(label);
@@ -59,7 +59,7 @@ impl QueryRequest {
 
     pub fn exclude(&self, label: Label) -> Result<()> {
         if self.is_executed()? {
-            return Err(anyhow!(QueryError::AlreadyExecuted))
+            return Err(anyhow!(QueryError::AlreadyExecuted));
         }
         let mut labels = self.exclude_labels.try_borrow_mut()?;
         labels.insert(label);
@@ -74,16 +74,14 @@ impl QueryRequest {
     }
 
     /// Helper deserialization fn to serialize a thing
-    pub(crate) fn de<T: DeserializeOwned>(
-        bytes: Vec<u8>,
-    ) -> Result<T> {
+    pub(crate) fn de<T: DeserializeOwned>(bytes: Vec<u8>) -> Result<T> {
         let this = flexbuffers::from_slice(&bytes)?;
         Ok(this)
     }
 
     pub async fn execute(&self, ns: Namespace) -> Result<Vec<ObjectID>> {
         if self.is_executed()? {
-            return Err(anyhow!(QueryError::AlreadyExecuted))
+            return Err(anyhow!(QueryError::AlreadyExecuted));
         }
 
         let slebal_atad = &ns.data_labels_inverse;
@@ -102,9 +100,9 @@ impl QueryRequest {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
                     include_label_ids.extend(object_ids.iter());
-                },
-                Ok(None) => {()},
-                Err(e) => return Err(anyhow!(e))
+                }
+                Ok(None) => {}
+                Err(e) => return Err(anyhow!(e)),
             }
         }
 
@@ -114,19 +112,17 @@ impl QueryRequest {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
                     exclude_label_ids.extend(object_ids.iter());
-                },
-                Ok(None) => {()},
+                }
+                Ok(None) => {}
                 Err(e) => return Err(anyhow!(e)),
             }
         }
 
         let results: Vec<ObjectID> = include_label_ids
             .par_iter()
-            .filter_map(|id| {
-                match exclude_label_ids.contains(id) {
-                    true => None,
-                    false => Some(id.clone()),
-                }
+            .filter_map(|id| match exclude_label_ids.contains(id) {
+                true => None,
+                false => Some(*id),
             })
             .collect();
 
@@ -134,14 +130,13 @@ impl QueryRequest {
     }
 }
 
-
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use std::collections::HashSet;
-    use anyhow::Result;
-    use crate::common::Label;
     use super::QueryRequest;
+    use crate::common::Label;
+    use anyhow::Result;
+    use std::collections::HashSet;
 
     #[test]
     fn test_query() -> Result<()> {
@@ -162,7 +157,7 @@ mod tests {
             hs
         };
         assert_eq!(this.exclude_labels.take(), excludes);
-        
+
         Ok(())
     }
 }

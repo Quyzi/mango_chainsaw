@@ -1,8 +1,11 @@
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, sync::Arc};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use bytes::Bytes;
-use serde_derive::{Serialize, Deserialize};
-
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Label {
@@ -21,7 +24,6 @@ impl Label {
         self.hash(&mut hasher);
         hasher.finish()
     }
-
 }
 
 pub type ObjectID = u64;
