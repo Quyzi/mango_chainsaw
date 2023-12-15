@@ -1,5 +1,8 @@
 use anyhow::Result;
-use std::{path::{Path, PathBuf}, time::{SystemTime, Duration, UNIX_EPOCH}};
+use std::{
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::namespace::Namespace;
 
@@ -8,7 +11,9 @@ use tempfile::TempDir;
 
 #[derive(Clone)]
 pub struct Db {
+    #[allow(dead_code)]
     pub(crate) opened: u64,
+    #[allow(dead_code)]
     pub(crate) path: PathBuf,
     pub(crate) inner: sled::Db,
 }
@@ -22,18 +27,19 @@ impl Db {
                 Err(e) => {
                     log::error!("error getting current time: {e}");
                     0
-                },
+                }
             }
         };
 
         Ok(Self {
-            inner: sled::open(&path)?,
+            inner: sled::open(path)?,
             path: path.into(),
-            opened: now,    
+            opened: now,
         })
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn open_temp() -> Result<Self> {
         let temp = TempDir::new()?;
         let now = {
@@ -43,7 +49,7 @@ impl Db {
                 Err(e) => {
                     log::error!("error getting current time: {e}");
                     0
-                },
+                }
             }
         };
         Ok(Self {
@@ -54,7 +60,7 @@ impl Db {
     }
 
     pub fn open_namespace(&self, name: &str) -> Result<Namespace> {
-        Ok(Namespace::open_from_db(self.inner.clone(), name)?)
+        Namespace::open_from_db(self.inner.clone(), name)
     }
 
     /// Get the next ID from sled monotonic counter

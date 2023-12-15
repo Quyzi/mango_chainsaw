@@ -1,19 +1,14 @@
 use anyhow::Result;
-use bytes::Bytes;
-use flexbuffers::FlexbufferSerializer;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use serde::Serialize;
 use sled::Tree;
 
-use crate::insert::InsertRequest;
-
 /// Separator character for tree names.
-pub(crate) const SEPARATOR: &'static str = "\u{001F}";
+pub(crate) const SEPARATOR: &str = "\u{001F}";
 
 #[derive(Clone, Debug)]
 pub struct Namespace {
     pub name: String,
 
+    #[allow(dead_code)]
     pub(crate) db: sled::Db,
 
     /// [Label ID] => [Label]
@@ -35,7 +30,7 @@ pub struct Namespace {
 impl Namespace {
     pub(crate) fn open_from_db(db: sled::Db, name: &str) -> Result<Self> {
         Ok(Self {
-            name: format!("{name}"),
+            name: name.to_string(),
             db: db.clone(),
             labels: db.open_tree(format!("{name}{SEPARATOR}labels"))?,
             labels_inverse: db.open_tree(format!("{name}{SEPARATOR}labels_inverse"))?,
