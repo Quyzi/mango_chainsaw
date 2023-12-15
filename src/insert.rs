@@ -4,7 +4,6 @@ use bytes::Bytes;
 use flexbuffers::FlexbufferSerializer;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_derive::{Deserialize, Serialize};
 use sled::transaction::ConflictableTransactionError;
 use sled::transaction::UnabortableTransactionError;
 use sled::Transactional;
@@ -15,23 +14,7 @@ use std::{
 };
 
 use crate::{db::Db, namespace::Namespace};
-
-#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Label {
-    pub data: String,
-}
-
-impl Label {
-    pub fn id(&self) -> LabelID {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-
-pub type ObjectID = u64;
-pub type Object = Arc<Bytes>;
-pub type LabelID = u64;
+use crate::common::*;
 
 #[derive(Clone, Default)]
 pub struct InsertRequest {
@@ -42,7 +25,7 @@ pub struct InsertRequest {
 
 impl InsertRequest {
     /// Create a new InsertRequest using the hash of the payload as the object ID
-    pub fn new(payload: Bytes, labels: HashSet<Label>) -> Self {
+    pub fn new(payload: Bytes, labels: Vec<Label>) -> Self {
         let mut this = Self::default();
         this.id = {
             let mut hasher = DefaultHasher::new();
@@ -50,12 +33,12 @@ impl InsertRequest {
             hasher.finish()
         };
         this.obj = Arc::new(payload);
-        this.labels = labels;
+        this.labels = HashSet::from_iter(labels.iter().cloned());
         this
     }
 
     /// Create a new InsertRequest using a monotonic counter to generate the object ID
-    pub fn new_using_db(db: &Db, payload: Bytes, labels: HashSet<Label>) -> Result<Self> {
+    pub fn new_using_db(db: &Db, payload: Bytes, labels: Vec<Label>) -> Result<Self> {
         let mut this = Self::new(payload, labels);
         this.id = db.next_id()?;
         Ok(this)
@@ -95,6 +78,11 @@ impl InsertRequest {
 
                     // Insert the data
                     tx_data.insert(object_id_bytes.clone(), Self::ser(&*self.obj)?)?;
+                    log::debug!(
+                        target: "mango_chainsaw::insert::execute", 
+                        "inserted object with id {id}",
+                        id = &self.id,
+                    );
 
                     // Collect label ids
                     let mut label_ids = vec![];
@@ -109,10 +97,19 @@ impl InsertRequest {
                         tx_labels.insert(key_bytes.clone(), struct_bytes)?;
                         tx_slebal.insert(value_bytes, key_bytes)?;
                         label_ids.push(id);
+                        log::debug!(
+                            target: "mango_chainsaw::insert::execute",
+                            "inserted label with id {id}: {value}"
+                        );
                     }
 
                     // Insert data_labels
                     tx_data_labels.insert(object_id_bytes.clone(), Self::ser(&label_ids)?)?;
+                    log::debug!(
+                        target: "mango_chainsaw::insert::execute",
+                        "inserted data_labels for id {id}",
+                        id = &self.id,
+                    );
 
                     // Upsert data_labels_inverse
                     for id in label_ids {
@@ -123,10 +120,18 @@ impl InsertRequest {
                                 object_ids.push(self.id);
                                 tx_slebal_atad
                                     .insert(object_id_bytes.clone(), Self::ser(object_ids)?)?;
+                                log::debug!(
+                                    target: "mango_chainsaw::insert::execute",
+                                    "upserted existing data_labels with id {id}",
+                                )
                             }
                             None => {
                                 tx_slebal_atad
                                     .insert(label_id_bytes.clone(), Self::ser(vec![&self.id])?)?;
+                                log::debug!(
+                                    target: "mango_chainsaw::insert::execute",
+                                    "inserted new data_labels with id {id}",
+                                )
                             }
                         }
                     }
@@ -134,6 +139,54 @@ impl InsertRequest {
                 },
             )
             .map_err(|e| anyhow!("{}", e))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use bytes::Bytes;
+    use log::LevelFilter;
+    use serde_json::json;
+    use simplelog::{CombinedLogger, TermLogger, Config, TerminalMode, ColorChoice};
+
+    use crate::db::Db;
+
+    use super::{Label, InsertRequest};
+
+
+    #[test]
+    pub fn test_insert() -> Result<()> {
+        CombinedLogger::init(vec![
+            TermLogger::new(
+                LevelFilter::Debug,
+                Config::default(),
+                TerminalMode::Mixed,
+                ColorChoice::Auto,
+            ),
+        ])?;
+
+        let db = Db::open_temp()?;
+        let ns = db.open_namespace("test_insert")?;
+
+        let data = json!({
+            "thing": "longer",
+            "numbers": [
+                4, 2, 0, 6, 9,
+            ],
+            "True": false,
+        });
+
+        let payload = Bytes::from(data.to_string());
+        let labels = vec![
+            Label::new("mango_chainsaw.localhost/datatype=testdata"),
+            Label::new("mango_chainsaw.localhost/uuid=meowmeow-meow-meow-meow-meowmeowmeow"),
+        ];
+
+        let req = InsertRequest::new_using_db(&db, payload, labels)?;
+        req.execute(ns)?;
+
         Ok(())
     }
 }
