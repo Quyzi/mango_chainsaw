@@ -64,7 +64,7 @@ impl InsertRequest {
     }
 
     /// Execute this insert request on a Namespace
-    pub fn execute(self, ns: Namespace) -> Result<()> {
+    pub fn execute(self, ns: &Namespace) -> Result<ObjectID> {
         let labels = &ns.labels;
         let slebal = &ns.labels_inverse;
         let data = &ns.data;
@@ -139,7 +139,7 @@ impl InsertRequest {
                 },
             )
             .map_err(|e| anyhow!("{}", e))?;
-        Ok(())
+        Ok(self.id)
     }
 }
 
@@ -182,7 +182,7 @@ mod tests {
         ];
 
         let req = InsertRequest::new_using_db(&db, payload, labels)?;
-        req.execute(ns)?;
+        req.execute(&ns)?;
 
         Ok(())
     }

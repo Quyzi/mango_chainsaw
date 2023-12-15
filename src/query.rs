@@ -79,7 +79,7 @@ impl QueryRequest {
         Ok(this)
     }
 
-    pub async fn execute(&self, ns: Namespace) -> Result<Vec<ObjectID>> {
+    pub async fn execute(&self, ns: &Namespace) -> Result<Vec<ObjectID>> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
         }
