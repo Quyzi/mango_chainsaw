@@ -48,16 +48,19 @@ fn test_insert_query() -> Result<()> {
 
     let req = InsertRequest::new_using_db(
         &db,
-        make_payload()?,
-        vec![
-            Label::new("mango.chainsaw/testing=true"),
-            Label::new("mango.chainsaw/prod=true"),
-            Label::new("mango.chainsaw/dev=true"),
-            Label::new("mango.chainsaw/staging=true"),
-            Label::new("mango.chainsaw/service=dummy"),
-            Label::new(&format!("mango.chainsaw/updated={now}")),
-        ],
+        make_payload()?
     )?;
+    let labels = vec![
+        Label::new("mango.chainsaw/testing=true"),
+        Label::new("mango.chainsaw/prod=true"),
+        Label::new("mango.chainsaw/dev=true"),
+        Label::new("mango.chainsaw/staging=true"),
+        Label::new("mango.chainsaw/service=dummy"),
+        Label::new(&format!("mango.chainsaw/updated={now}")),
+    ];
+    for label in labels {
+        req.add_label(label)?;
+    }
     let id = req.execute(&ns)?;
 
     let query = QueryRequest::new();

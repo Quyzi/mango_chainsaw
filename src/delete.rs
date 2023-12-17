@@ -12,9 +12,18 @@ use sled::Transactional;
 use std::{cell::RefCell, collections::HashSet, fmt::Display};
 use thiserror::Error;
 
+/// A Query Error
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
+    /// The query has already been executed. 
+    /// 
+    /// A query can only be executed once, success or fail. 
+    /// Executing a query consumes its contents.
     AlreadyExecuted,
+
+    /// Something else happened. 
+    /// 
+    /// Question everything?
     Undefined,
 }
 
@@ -27,9 +36,19 @@ impl Display for QueryError {
     }
 }
 
+/// A `DeleteRequest`
+/// 
+/// A `DeleteRequest` is a request to delete a list of objects from a `Namespace`. 
+/// 
+/// Executing a `DeleteRequest` will delete the given `ObjectID`s from the Namespace. 
+/// It also removes the `ObjectID` from any `Label`s referring to the `Object`. 
+/// If a `Label` being updated refers to only that object, it will be removed. 
 #[derive(Clone, Debug)]
 pub struct DeleteRequest {
+    /// `ObjectID`s to be deleted
     objects: RefCell<HashSet<ObjectID>>,
+
+    /// Has this `DeleteRequest` been executed already?
     executed: RefCell<bool>,
 }
 
@@ -43,10 +62,14 @@ impl Default for DeleteRequest {
 }
 
 impl DeleteRequest {
+    /// Create a new `DeleteRequest`
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add an `ObjectID` to this `DeleteRequest`
+    /// 
+    /// This method can fail if the request has already been executed. 
     pub fn add_object(&self, id: ObjectID) -> Result<()> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
@@ -56,6 +79,7 @@ impl DeleteRequest {
         Ok(())
     }
 
+    /// Has this `DeleteRequest` been executed?
     pub fn is_executed(&self) -> Result<bool> {
         Ok(*self.executed.try_borrow()?)
     }
@@ -79,6 +103,16 @@ impl DeleteRequest {
         Ok(this)
     }
 
+    /// Execute the `DeleteRequest`
+    /// 
+    /// Delete any number of given `ObjectID`s. 
+    /// This is executed as a transaction. If any removal or update is unsuccessful, 
+    /// the entire `DeleteRequest` will be aborted. 
+    /// 
+    /// For each `ObjectID`:
+    /// 1. The `Object` is deleted from the `Namespace`
+    /// 2. The `Label` data for the `Object` is removed
+    /// 3. Any unused `Label`s are removed
     pub fn execute(&self, ns: Namespace) -> Result<()> {
         let labels = &ns.labels;
         let slebal = &ns.labels_inverse;
@@ -86,12 +120,14 @@ impl DeleteRequest {
         let data_labels = &ns.data_labels;
         let slebal_atad = &ns.data_labels_inverse;
 
-        {
+        if !self.is_executed()? {
             let mut executed = self.executed.try_borrow_mut()?;
             *executed = true;
+        } else {
+            return Err(anyhow!(QueryError::AlreadyExecuted))
         }
 
-        let req_objects = self.objects.take();
+        let req_objects = self.objects.try_borrow()?.clone();
 
         (labels, slebal, data, data_labels, slebal_atad)
             .transaction(

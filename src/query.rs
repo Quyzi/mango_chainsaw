@@ -6,9 +6,20 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{cell::RefCell, collections::HashSet, fmt::Display};
 use thiserror::Error;
 
+/// A Query Error
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
+    /// The query has already been executed.
+    /// 
+    /// A query can onloy be executed once.
     AlreadyExecuted,
+
+    /// The query hasn't been executed yet!
+    NotYetExecuted,
+
+    /// Something broke
+    /// 
+    /// Oops
     Undefined,
 }
 
@@ -16,15 +27,30 @@ impl Display for QueryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             QueryError::AlreadyExecuted => write!(f, "Search Query Already Executed"),
+            QueryError::NotYetExecuted => write!(f, "Search Query Not Yet Executed"),
             _ => write!(f, "Undefined"),
         }
     }
 }
 
+/// A `QueryRequest`
+/// 
+/// Query a `Namespace` for any `Object`s matching a given set of `Label`s. 
+/// Specific `Label`s can be included or excluded as needed. 
+/// Executing a `QueryRequest` returns a set of `ObjectID`s matching:
+/// 1. Any of the include `Label`s
+/// 2. None of the exclude `Label`s
 pub struct QueryRequest {
+    /// Labels to be included in the query
     pub include_labels: RefCell<HashSet<Label>>,
+
+    /// Labels to be excluded from the query
     pub exclude_labels: RefCell<HashSet<Label>>,
+
+    /// The results of executing the query on a `Namespace`
     pub results: RefCell<Option<HashSet<ObjectID>>>,
+
+    /// Has this query been executed?
     executed: RefCell<bool>,
 }
 
@@ -40,14 +66,31 @@ impl Default for QueryRequest {
 }
 
 impl QueryRequest {
+    /// Create a new `QueryRequest`
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Has this `QueryRequest` been executed?
     pub fn is_executed(&self) -> Result<bool> {
         Ok(*self.executed.try_borrow()?)
     }
 
+    /// Get the results of this query. 
+    /// 
+    /// The query needs to have been executed to work.
+    pub fn results(&self) -> Result<Option<Vec<ObjectID>>> {
+        if !self.is_executed()? {
+            return Err(anyhow!(QueryError::NotYetExecuted))
+        }
+        let results = match self.results.try_borrow()?.clone() {
+            Some(r) => Some(r.into_iter().collect()),
+            None => None,
+        };
+        Ok(results)
+    }
+
+    /// Include a `Label` in this query
     pub fn include(&self, label: Label) -> Result<()> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
@@ -57,6 +100,7 @@ impl QueryRequest {
         Ok(())
     }
 
+    /// Exclude a `Label` from this query
     pub fn exclude(&self, label: Label) -> Result<()> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
@@ -79,6 +123,13 @@ impl QueryRequest {
         Ok(this)
     }
 
+    /// Execute this query on a `Namespace`
+    /// 
+    /// * Include `Label`s use OR logic
+    /// 
+    /// This will return a set of `ObjectID`s that match:
+    /// 1. Any of the include `Label`s
+    /// 2. None of the exclude `Label`s
     pub async fn execute(&self, ns: &Namespace) -> Result<Vec<ObjectID>> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
@@ -86,13 +137,15 @@ impl QueryRequest {
 
         let slebal_atad = &ns.data_labels_inverse;
 
-        {
+        if !self.is_executed()? {
             let mut executed = self.executed.try_borrow_mut()?;
             *executed = true;
+        } else {
+            return Err(anyhow!(QueryError::AlreadyExecuted))
         }
 
-        let includes = self.include_labels.take();
-        let excludes = self.exclude_labels.take();
+        let includes = self.include_labels.try_borrow()?.clone();
+        let excludes = self.exclude_labels.try_borrow()?.clone();
 
         let mut include_label_ids: HashSet<ObjectID> = HashSet::new();
         for label in includes {
