@@ -1,7 +1,7 @@
 use crate::{common::*, namespace::Namespace};
 use anyhow::{anyhow, Result};
 use flexbuffers::FlexbufferSerializer;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator, IntoParallelIterator};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{cell::RefCell, collections::HashSet, fmt::Display};
 use thiserror::Error;
@@ -47,6 +47,8 @@ pub struct QueryRequest {
     /// Labels to be excluded from the query
     pub exclude_labels: RefCell<HashSet<Label>>,
 
+    pub include_prefix: RefCell<HashSet<Label>>,
+
     /// The results of executing the query on a `Namespace`
     pub results: RefCell<Option<HashSet<ObjectID>>>,
 
@@ -59,6 +61,7 @@ impl Default for QueryRequest {
         Self {
             include_labels: RefCell::new(HashSet::new()),
             exclude_labels: RefCell::new(HashSet::new()),
+            include_prefix: RefCell::new(HashSet::new()),
             results: RefCell::new(None),
             executed: RefCell::new(false),
         }
@@ -100,6 +103,16 @@ impl QueryRequest {
         Ok(())
     }
 
+    /// Add a prefix scan `Label`
+    pub fn include_prefix(&self, label: Label) -> Result<()> {
+        if self.is_executed()? {
+            return Err(anyhow!(QueryError::AlreadyExecuted));
+        }
+        let mut include_prefix = self.include_prefix.try_borrow_mut()?;
+        include_prefix.insert(label);
+        Ok(())
+    }
+
     /// Exclude a `Label` from this query
     pub fn exclude(&self, label: Label) -> Result<()> {
         if self.is_executed()? {
@@ -136,6 +149,7 @@ impl QueryRequest {
         }
 
         let slebal_atad = &ns.data_labels_inverse;
+        let slebal = &ns.labels_inverse;
 
         if !self.is_executed()? {
             let mut executed = self.executed.try_borrow_mut()?;
@@ -146,13 +160,24 @@ impl QueryRequest {
 
         let includes = self.include_labels.try_borrow()?.clone();
         let excludes = self.exclude_labels.try_borrow()?.clone();
+        let include_prefixes = self.include_prefix.try_borrow()?.clone();
 
-        let mut include_label_ids: HashSet<ObjectID> = HashSet::new();
-        for label in includes {
+        let mut all_includes: HashSet<Label> = includes;
+        for label in &include_prefixes {
+            let prefix = Self::ser(label)?;
+            let mut scanner = slebal.scan_prefix(prefix);
+            while let Some(Ok((bytes, _))) = scanner.next() {
+                let lbl: String = Self::de(bytes.to_vec())?;
+                all_includes.insert(Label::new(&lbl));
+            }
+        }
+
+        let mut include_object_ids: HashSet<ObjectID> = HashSet::new();
+        for label in all_includes {
             match slebal_atad.get(Self::ser(label.id())?) {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
-                    include_label_ids.extend(object_ids.iter());
+                    include_object_ids.extend(object_ids.iter());
                 }
                 Ok(None) => {}
                 Err(e) => return Err(anyhow!(e)),
@@ -171,7 +196,7 @@ impl QueryRequest {
             }
         }
 
-        let results: Vec<ObjectID> = include_label_ids
+        let results: Vec<ObjectID> = include_object_ids
             .par_iter()
             .filter_map(|id| match exclude_label_ids.contains(id) {
                 true => None,

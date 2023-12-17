@@ -1,0 +1,15 @@
+{
+  "binaries": [],
+  "examples": [],
+  "integration_tests": [],
+  "unit_tests": [
+    {
+      "package_name": "mango_chainsaw",
+      "test_cases": [
+        "insert::tests::test_insert",
+        "query::tests::test_query",
+        "tests::test_insert_query"
+      ]
+    }
+  ]
+}
