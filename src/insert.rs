@@ -7,6 +7,9 @@ use serde::Serialize;
 use sled::transaction::ConflictableTransactionError;
 use sled::transaction::UnabortableTransactionError;
 use sled::Transactional;
+use thiserror::Error;
+use std::cell::RefCell;
+use std::fmt::Display;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
@@ -16,16 +19,44 @@ use std::{
 use crate::common::*;
 use crate::{db::Db, namespace::Namespace};
 
+/// A Query Error
+#[derive(Debug, Clone, Error)]
+pub enum QueryError {
+    /// The query has already been executed.
+    /// 
+    /// A query can only be executed once, success or fail.
+    AlreadyExecuted,
+
+    /// Something else happened.
+    /// 
+    /// What?
+    Undefined,
+}
+
+impl Display for QueryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QueryError::AlreadyExecuted => write!(f, "Insert Query Already Executed"),
+            _ => write!(f, "Undefined"),
+        }
+    }
+}
+
+/// A `InsertRequest`
+/// 
+/// An `InsertRequest` is a request to insert an `Object` into a `Namespace`. 
+/// It contains a payload, the `ObjectID`, and a list of `Label`s describing it.
 #[derive(Clone, Default)]
 pub struct InsertRequest {
     pub id: ObjectID,
     pub(crate) obj: Object,
-    pub labels: HashSet<Label>,
+    pub labels: RefCell<HashSet<Label>>,
+    pub executed: RefCell<bool>,
 }
 
 impl InsertRequest {
     /// Create a new InsertRequest using the hash of the payload as the object ID
-    pub fn new(payload: Bytes, labels: Vec<Label>) -> Self {
+    pub fn new(payload: Bytes) -> Self {
         Self {
             id: {
                 let mut hasher = DefaultHasher::new();
@@ -33,22 +64,38 @@ impl InsertRequest {
                 hasher.finish()
             },
             obj: Arc::new(payload),
-            labels: HashSet::from_iter(labels.iter().cloned()),
+            labels: RefCell::new(HashSet::new()),
+            executed: RefCell::new(false),
         }
     }
 
     /// Create a new InsertRequest with a custom id
-    pub fn new_custom_id(id: ObjectID, payload: Bytes, labels: Vec<Label>) -> Result<Self> {
-        let mut this = Self::new(payload, labels);
+    pub fn new_custom_id(id: ObjectID, payload: Bytes) -> Result<Self> {
+        let mut this = Self::new(payload);
         this.id = id;
         Ok(this)
     }
 
     /// Create a new InsertRequest using a monotonic counter to generate the object ID
-    pub fn new_using_db(db: &Db, payload: Bytes, labels: Vec<Label>) -> Result<Self> {
-        let mut this = Self::new(payload, labels);
+    pub fn new_using_db(db: &Db, payload: Bytes) -> Result<Self> {
+        let mut this = Self::new(payload);
         this.id = db.next_id()?;
         Ok(this)
+    }
+
+    /// Add a `Label` to this `InsertRequest`
+    pub fn add_label(&self, label: Label) -> Result<()> {
+        if self.is_executed()? {
+            return Err(anyhow!(QueryError::AlreadyExecuted));
+        }
+        let mut labels = self.labels.try_borrow_mut()?;
+        labels.insert(label);
+        Ok(())
+    }
+
+    /// Has this `InsertRequest` been executed?
+    pub fn is_executed(&self) -> Result<bool> {
+        Ok(*self.executed.try_borrow()?)
     }
 
     /// Helper serialization fn to serialize a thing inside a transaction block
@@ -70,13 +117,24 @@ impl InsertRequest {
         Ok(this)
     }
 
-    /// Execute this insert request on a Namespace
+    /// Execute this insert request on a `Namespace`
+    /// 
+    /// This inserts the `Object` and its `Label`s into the `Namespace`.
+    /// `Label`s are updated or created as necessary.
+    /// `InsertRequest`s are transactional.
     pub fn execute(self, ns: &Namespace) -> Result<ObjectID> {
         let labels = &ns.labels;
         let slebal = &ns.labels_inverse;
         let data = &ns.data;
         let data_labels = &ns.data_labels;
         let slebal_atad = &ns.data_labels_inverse;
+
+        if !self.is_executed()? {
+            let mut executed = self.executed.try_borrow_mut()?;
+            *executed = true;
+        } else {
+            return Err(anyhow!(QueryError::AlreadyExecuted))
+        }
 
         (labels, slebal, data, data_labels, slebal_atad)
             .transaction(
@@ -93,9 +151,11 @@ impl InsertRequest {
 
                     // Collect label ids
                     let mut label_ids = vec![];
+                    let request_labels = self.labels.try_borrow()
+                        .map_err(|_e| UnabortableTransactionError::Conflict)?;
 
                     // Insert the labels and labels_inverse values
-                    for label in &self.labels {
+                    for label in request_labels.clone() {
                         let id = label.id();
                         let value = label.data.clone();
                         let key_bytes = Self::ser(id)?;
@@ -188,7 +248,10 @@ mod tests {
             Label::new("mango_chainsaw.localhost/uuid=meowmeow-meow-meow-meow-meowmeowmeow"),
         ];
 
-        let req = InsertRequest::new_using_db(&db, payload, labels)?;
+        let req = InsertRequest::new_using_db(&db, payload)?;
+        for label in labels {
+            req.add_label(label)?;
+        }
         req.execute(&ns)?;
 
         Ok(())
