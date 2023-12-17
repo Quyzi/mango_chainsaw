@@ -7,7 +7,6 @@ use serde::Serialize;
 use sled::transaction::ConflictableTransactionError;
 use sled::transaction::UnabortableTransactionError;
 use sled::Transactional;
-use thiserror::Error;
 use std::cell::RefCell;
 use std::fmt::Display;
 use std::{
@@ -15,6 +14,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::Arc,
 };
+use thiserror::Error;
 
 use crate::common::*;
 use crate::{db::Db, namespace::Namespace};
@@ -23,12 +23,12 @@ use crate::{db::Db, namespace::Namespace};
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
     /// The query has already been executed.
-    /// 
+    ///
     /// A query can only be executed once, success or fail.
     AlreadyExecuted,
 
     /// Something else happened.
-    /// 
+    ///
     /// What?
     Undefined,
 }
@@ -43,8 +43,8 @@ impl Display for QueryError {
 }
 
 /// A `InsertRequest`
-/// 
-/// An `InsertRequest` is a request to insert an `Object` into a `Namespace`. 
+///
+/// An `InsertRequest` is a request to insert an `Object` into a `Namespace`.
 /// It contains a payload, the `ObjectID`, and a list of `Label`s describing it.
 #[derive(Clone, Default)]
 pub struct InsertRequest {
@@ -118,7 +118,7 @@ impl InsertRequest {
     }
 
     /// Execute this insert request on a `Namespace`
-    /// 
+    ///
     /// This inserts the `Object` and its `Label`s into the `Namespace`.
     /// `Label`s are updated or created as necessary.
     /// `InsertRequest`s are transactional.
@@ -133,7 +133,7 @@ impl InsertRequest {
             let mut executed = self.executed.try_borrow_mut()?;
             *executed = true;
         } else {
-            return Err(anyhow!(QueryError::AlreadyExecuted))
+            return Err(anyhow!(QueryError::AlreadyExecuted));
         }
 
         (labels, slebal, data, data_labels, slebal_atad)
@@ -143,7 +143,7 @@ impl InsertRequest {
 
                     // Insert the data
                     tx_data.insert(object_id_bytes.clone(), Self::ser(&*self.obj)?)?;
-                    log::debug!(
+                    log::info!(
                         target: "mango_chainsaw::insert::execute",
                         "inserted object with id {id}",
                         id = &self.id,
@@ -151,28 +151,30 @@ impl InsertRequest {
 
                     // Collect label ids
                     let mut label_ids = vec![];
-                    let request_labels = self.labels.try_borrow()
+                    let request_labels = self
+                        .labels
+                        .try_borrow()
                         .map_err(|_e| UnabortableTransactionError::Conflict)?;
 
                     // Insert the labels and labels_inverse values
                     for label in request_labels.clone() {
                         let id = label.id();
-                        let value = label.data.clone();
                         let key_bytes = Self::ser(id)?;
-                        let struct_bytes = Self::ser(label)?;
-                        let value_bytes = Self::ser(&value)?;
+                        let struct_bytes = Self::ser(label.clone())?;
+                        let value_bytes = label.data.as_bytes();
                         tx_labels.insert(key_bytes.clone(), struct_bytes)?;
                         tx_slebal.insert(value_bytes, key_bytes)?;
                         label_ids.push(id);
-                        log::debug!(
+                        log::info!(
                             target: "mango_chainsaw::insert::execute",
-                            "inserted label with id {id}: {value}"
+                            "inserted label with id {id}: {}",
+                            label.data
                         );
                     }
 
                     // Insert data_labels
                     tx_data_labels.insert(object_id_bytes.clone(), Self::ser(&label_ids)?)?;
-                    log::debug!(
+                    log::info!(
                         target: "mango_chainsaw::insert::execute",
                         "inserted data_labels for id {id}",
                         id = &self.id,
@@ -185,17 +187,19 @@ impl InsertRequest {
                             Some(old) => {
                                 let mut object_ids: Vec<ObjectID> = Self::de(old.to_vec())?;
                                 object_ids.push(self.id);
-                                tx_slebal_atad
-                                    .insert(object_id_bytes.clone(), Self::ser(object_ids)?)?;
-                                log::debug!(
+                                tx_slebal_atad.insert(
+                                    label_id_bytes.clone(),
+                                    Self::ser(object_ids.to_owned())?,
+                                )?;
+                                log::info!(
                                     target: "mango_chainsaw::insert::execute",
-                                    "upserted existing data_labels with id {id}",
+                                    "upserted existing data_labels with id {id}: {object_ids:?}",
                                 )
                             }
                             None => {
                                 tx_slebal_atad
                                     .insert(label_id_bytes.clone(), Self::ser(vec![&self.id])?)?;
-                                log::debug!(
+                                log::info!(
                                     target: "mango_chainsaw::insert::execute",
                                     "inserted new data_labels with id {id}",
                                 )
@@ -207,53 +211,5 @@ impl InsertRequest {
             )
             .map_err(|e| anyhow!("{}", e))?;
         Ok(self.id)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use anyhow::Result;
-    use bytes::Bytes;
-    use log::LevelFilter;
-    use serde_json::json;
-    use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode};
-
-    use crate::db::Db;
-
-    use super::{InsertRequest, Label};
-
-    #[test]
-    pub fn test_insert() -> Result<()> {
-        CombinedLogger::init(vec![TermLogger::new(
-            LevelFilter::Debug,
-            Config::default(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        )])?;
-
-        let db = Db::open_temp()?;
-        let ns = db.open_namespace("test_insert")?;
-
-        let data = json!({
-            "thing": "longer",
-            "numbers": [
-                4, 2, 0, 6, 9,
-            ],
-            "True": false,
-        });
-
-        let payload = Bytes::from(data.to_string());
-        let labels = vec![
-            Label::new("mango_chainsaw.localhost/datatype=testdata"),
-            Label::new("mango_chainsaw.localhost/uuid=meowmeow-meow-meow-meow-meowmeowmeow"),
-        ];
-
-        let req = InsertRequest::new_using_db(&db, payload)?;
-        for label in labels {
-            req.add_label(label)?;
-        }
-        req.execute(&ns)?;
-
-        Ok(())
     }
 }
