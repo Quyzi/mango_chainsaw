@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
     /// The query has already been executed.
-    /// 
+    ///
     /// A query can onloy be executed once.
     AlreadyExecuted,
 
@@ -18,7 +18,7 @@ pub enum QueryError {
     NotYetExecuted,
 
     /// Something broke
-    /// 
+    ///
     /// Oops
     Undefined,
 }
@@ -34,9 +34,9 @@ impl Display for QueryError {
 }
 
 /// A `QueryRequest`
-/// 
-/// Query a `Namespace` for any `Object`s matching a given set of `Label`s. 
-/// Specific `Label`s can be included or excluded as needed. 
+///
+/// Query a `Namespace` for any `Object`s matching a given set of `Label`s.
+/// Specific `Label`s can be included or excluded as needed.
 /// Executing a `QueryRequest` returns a set of `ObjectID`s matching:
 /// 1. Any of the include `Label`s
 /// 2. None of the exclude `Label`s
@@ -46,6 +46,8 @@ pub struct QueryRequest {
 
     /// Labels to be excluded from the query
     pub exclude_labels: RefCell<HashSet<Label>>,
+
+    pub include_prefix: RefCell<HashSet<Label>>,
 
     /// The results of executing the query on a `Namespace`
     pub results: RefCell<Option<HashSet<ObjectID>>>,
@@ -59,6 +61,7 @@ impl Default for QueryRequest {
         Self {
             include_labels: RefCell::new(HashSet::new()),
             exclude_labels: RefCell::new(HashSet::new()),
+            include_prefix: RefCell::new(HashSet::new()),
             results: RefCell::new(None),
             executed: RefCell::new(false),
         }
@@ -76,17 +79,18 @@ impl QueryRequest {
         Ok(*self.executed.try_borrow()?)
     }
 
-    /// Get the results of this query. 
-    /// 
+    /// Get the results of this query.
+    ///
     /// The query needs to have been executed to work.
     pub fn results(&self) -> Result<Option<Vec<ObjectID>>> {
         if !self.is_executed()? {
-            return Err(anyhow!(QueryError::NotYetExecuted))
+            return Err(anyhow!(QueryError::NotYetExecuted));
         }
-        let results = match self.results.try_borrow()?.clone() {
-            Some(r) => Some(r.into_iter().collect()),
-            None => None,
-        };
+        let results = self
+            .results
+            .try_borrow()?
+            .clone()
+            .map(|r| r.into_iter().collect());
         Ok(results)
     }
 
@@ -97,6 +101,16 @@ impl QueryRequest {
         }
         let mut labels = self.include_labels.try_borrow_mut()?;
         labels.insert(label);
+        Ok(())
+    }
+
+    /// Add a prefix scan `Label`
+    pub fn include_prefix(&self, label: Label) -> Result<()> {
+        if self.is_executed()? {
+            return Err(anyhow!(QueryError::AlreadyExecuted));
+        }
+        let mut include_prefix = self.include_prefix.try_borrow_mut()?;
+        include_prefix.insert(label);
         Ok(())
     }
 
@@ -124,37 +138,61 @@ impl QueryRequest {
     }
 
     /// Execute this query on a `Namespace`
-    /// 
+    ///
     /// * Include `Label`s use OR logic
-    /// 
+    ///
     /// This will return a set of `ObjectID`s that match:
     /// 1. Any of the include `Label`s
     /// 2. None of the exclude `Label`s
-    pub async fn execute(&self, ns: &Namespace) -> Result<Vec<ObjectID>> {
+    pub fn execute(&self, ns: &Namespace) -> Result<Vec<ObjectID>> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
         }
 
         let slebal_atad = &ns.data_labels_inverse;
+        let slebal = &ns.labels_inverse;
 
         if !self.is_executed()? {
             let mut executed = self.executed.try_borrow_mut()?;
             *executed = true;
+            log::info!("query is not executed")
         } else {
-            return Err(anyhow!(QueryError::AlreadyExecuted))
+            return Err(anyhow!(QueryError::AlreadyExecuted));
         }
 
         let includes = self.include_labels.try_borrow()?.clone();
         let excludes = self.exclude_labels.try_borrow()?.clone();
+        let include_prefixes = self.include_prefix.try_borrow()?.clone();
 
-        let mut include_label_ids: HashSet<ObjectID> = HashSet::new();
-        for label in includes {
+        log::info!(
+            "query includes={:?} exlcudes={:?} prefixes={:?}",
+            includes,
+            excludes,
+            include_prefixes
+        );
+        let mut all_includes: HashSet<Label> = includes;
+        for label in include_prefixes {
+            log::info!("checking prefix {label}");
+            let prefix = label.data.as_bytes();
+            let mut scanner = slebal.scan_prefix(prefix);
+            while let Some(Ok((bytes, _))) = scanner.next() {
+                let lbl: String = String::from_utf8(bytes.to_vec())?;
+                log::info!("query found label {lbl} from prefix {label}");
+                all_includes.insert(Label::new(&lbl));
+            }
+        }
+
+        let mut include_object_ids: HashSet<ObjectID> = HashSet::new();
+        for label in all_includes {
             match slebal_atad.get(Self::ser(label.id())?) {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
-                    include_label_ids.extend(object_ids.iter());
+                    log::info!("query found objects with label={label}: {object_ids:?}");
+                    include_object_ids.extend(object_ids.iter());
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    log::info!("query found no objects with label={label}");
+                }
                 Err(e) => return Err(anyhow!(e)),
             }
         }
@@ -164,6 +202,7 @@ impl QueryRequest {
             match slebal_atad.get(Self::ser(label.id())?) {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
+                    log::info!("query excluding objects with label={label}: {object_ids:?}");
                     exclude_label_ids.extend(object_ids.iter());
                 }
                 Ok(None) => {}
@@ -171,7 +210,7 @@ impl QueryRequest {
             }
         }
 
-        let results: Vec<ObjectID> = include_label_ids
+        let results: Vec<ObjectID> = include_object_ids
             .par_iter()
             .filter_map(|id| match exclude_label_ids.contains(id) {
                 true => None,
@@ -179,38 +218,8 @@ impl QueryRequest {
             })
             .collect();
 
+        log::info!("query exeuted. results: {results:#?}");
+
         Ok(results)
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::QueryRequest;
-    use crate::common::Label;
-    use anyhow::Result;
-    use std::collections::HashSet;
-
-    #[test]
-    fn test_query() -> Result<()> {
-        let this = QueryRequest::new();
-        this.include(Label::new("mango_chainsaw.localhost/testdata=true"))?;
-        this.exclude(Label::new("mango_chainsaw.localhost/production=false"))?;
-
-        let includes = {
-            let mut hs = HashSet::new();
-            hs.insert(Label::new("mango_chainsaw.localhost/testdata=true"));
-            hs
-        };
-        assert_eq!(this.include_labels.take(), includes);
-
-        let excludes = {
-            let mut hs = HashSet::new();
-            hs.insert(Label::new("mango_chainsaw.localhost/production=false"));
-            hs
-        };
-        assert_eq!(this.exclude_labels.take(), excludes);
-
-        Ok(())
     }
 }

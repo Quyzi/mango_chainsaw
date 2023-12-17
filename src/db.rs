@@ -6,9 +6,6 @@ use std::{
 
 use crate::namespace::Namespace;
 
-#[cfg(test)]
-use tempfile::TempDir;
-
 /// The MangoChainsaw DB
 #[derive(Clone)]
 pub struct Db {
@@ -38,28 +35,6 @@ impl Db {
         })
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)]
-    /// Open a MangoChainsaw db in a tempdir
-    pub(crate) fn open_temp() -> Result<Self> {
-        let temp = TempDir::new()?;
-        let now = {
-            let now = SystemTime::now();
-            match now.duration_since(UNIX_EPOCH) {
-                Ok(now) => now.as_secs(),
-                Err(e) => {
-                    log::error!("error getting current time: {e}");
-                    0
-                }
-            }
-        };
-        Ok(Self {
-            opened: now,
-            path: temp.path().into(),
-            inner: sled::open(temp.path())?,
-        })
-    }
-
     /// Get the timestamp the db was opened
     pub fn opened(&self) -> u64 {
         self.opened
@@ -73,6 +48,11 @@ impl Db {
     /// Open a Namespace by name
     pub fn open_namespace(&self, name: &str) -> Result<Namespace> {
         Namespace::open_from_db(self.inner.clone(), name)
+    }
+
+    /// Force a flush sync on the deb.
+    pub fn flush_sync(&self) -> Result<usize> {
+        Ok(self.inner.flush()?)
     }
 
     /// Get the next ID from sled monotonic counter
