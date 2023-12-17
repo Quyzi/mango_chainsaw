@@ -31,7 +31,6 @@ fn make_payload() -> Result<Bytes> {
             "now": now,
             "living": false,
         })
-        .to_string()
     )?;
 
     Ok(buf.freeze())

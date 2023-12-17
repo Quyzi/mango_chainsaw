@@ -37,6 +37,13 @@ impl InsertRequest {
         }
     }
 
+    /// Create a new InsertRequest with a custom id
+    pub fn new_custom_id(id: ObjectID, payload: Bytes, labels: Vec<Label>) -> Result<Self> {
+        let mut this = Self::new(payload, labels);
+        this.id = id;
+        Ok(this)
+    }
+
     /// Create a new InsertRequest using a monotonic counter to generate the object ID
     pub fn new_using_db(db: &Db, payload: Bytes, labels: Vec<Label>) -> Result<Self> {
         let mut this = Self::new(payload, labels);
