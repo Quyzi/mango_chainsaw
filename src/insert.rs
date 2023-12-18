@@ -1,7 +1,10 @@
+use crate::common::*;
+use crate::{db::Db, namespace::Namespace};
 use anyhow::anyhow;
 use anyhow::Result;
 use bytes::Bytes;
 use flexbuffers::FlexbufferSerializer;
+use minitrace::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sled::transaction::ConflictableTransactionError;
@@ -15,9 +18,6 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-
-use crate::common::*;
-use crate::{db::Db, namespace::Namespace};
 
 /// A Query Error
 #[derive(Debug, Clone, Error)]
@@ -122,6 +122,7 @@ impl InsertRequest {
     /// This inserts the `Object` and its `Label`s into the `Namespace`.
     /// `Label`s are updated or created as necessary.
     /// `InsertRequest`s are transactional.
+    #[trace]
     pub fn execute(self, ns: &Namespace) -> Result<ObjectID> {
         let labels = &ns.labels;
         let slebal = &ns.labels_inverse;
@@ -143,11 +144,6 @@ impl InsertRequest {
 
                     // Insert the data
                     tx_data.insert(object_id_bytes.clone(), Self::ser(&*self.obj)?)?;
-                    log::info!(
-                        target: "mango_chainsaw::insert::execute",
-                        "inserted object with id {id}",
-                        id = &self.id,
-                    );
 
                     // Collect label ids
                     let mut label_ids = vec![];
@@ -165,20 +161,10 @@ impl InsertRequest {
                         tx_labels.insert(key_bytes.clone(), struct_bytes)?;
                         tx_slebal.insert(value_bytes, key_bytes)?;
                         label_ids.push(id);
-                        log::info!(
-                            target: "mango_chainsaw::insert::execute",
-                            "inserted label with id {id}: {}",
-                            label.data
-                        );
                     }
 
                     // Insert data_labels
                     tx_data_labels.insert(object_id_bytes.clone(), Self::ser(&label_ids)?)?;
-                    log::info!(
-                        target: "mango_chainsaw::insert::execute",
-                        "inserted data_labels for id {id}",
-                        id = &self.id,
-                    );
 
                     // Upsert data_labels_inverse
                     for id in label_ids {
@@ -191,18 +177,10 @@ impl InsertRequest {
                                     label_id_bytes.clone(),
                                     Self::ser(object_ids.to_owned())?,
                                 )?;
-                                log::info!(
-                                    target: "mango_chainsaw::insert::execute",
-                                    "upserted existing data_labels with id {id}: {object_ids:?}",
-                                )
                             }
                             None => {
                                 tx_slebal_atad
                                     .insert(label_id_bytes.clone(), Self::ser(vec![&self.id])?)?;
-                                log::info!(
-                                    target: "mango_chainsaw::insert::execute",
-                                    "inserted new data_labels with id {id}",
-                                )
                             }
                         }
                     }

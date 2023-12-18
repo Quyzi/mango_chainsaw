@@ -1,8 +1,8 @@
+use crate::common::*;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use flexbuffers::FlexbufferSerializer;
-
-use crate::common::*;
+use minitrace::prelude::*;
 use serde::{de::DeserializeOwned, Serialize};
 use sled::Tree;
 
@@ -55,6 +55,7 @@ impl Namespace {
     }
 
     /// Serialization helper fn
+    #[trace]
     pub(crate) fn ser<T: Serialize>(thing: T) -> Result<Vec<u8>> {
         let mut s = FlexbufferSerializer::new();
         thing.serialize(&mut s)?;
@@ -62,12 +63,14 @@ impl Namespace {
     }
 
     /// Deserialization helper fn
+    #[trace]
     pub(crate) fn de<T: DeserializeOwned>(thing: Vec<u8>) -> Result<T> {
         let this = flexbuffers::from_slice(&thing)?;
         Ok(this)
     }
 
     /// Get a single object by id
+    #[trace]
     pub fn get_one(&self, id: ObjectID) -> Result<(ObjectID, Option<Vec<Label>>, Option<Bytes>)> {
         let kb = Self::ser(id)?;
         let bytes = self
@@ -104,6 +107,7 @@ impl Namespace {
 
     /// Get all object ids
     #[allow(clippy::type_complexity)]
+    #[trace]
     pub fn get_all(
         &self,
         ids: Vec<ObjectID>,

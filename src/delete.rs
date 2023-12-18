@@ -3,6 +3,7 @@ use crate::namespace::Namespace;
 use anyhow::anyhow;
 use anyhow::Result;
 use flexbuffers::FlexbufferSerializer;
+use minitrace::prelude::*;
 use rayon::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -113,7 +114,11 @@ impl DeleteRequest {
     /// 1. The `Object` is deleted from the `Namespace`
     /// 2. The `Label` data for the `Object` is removed
     /// 3. Any unused `Label`s are removed
+    #[trace]
     pub fn execute(&self, ns: &Namespace) -> Result<()> {
+        let root = Span::root("delete", SpanContext::random());
+        let _ = root.set_local_parent();
+
         let labels = &ns.labels;
         let slebal = &ns.labels_inverse;
         let data = &ns.data;
@@ -151,8 +156,17 @@ impl DeleteRequest {
                                 let object_ids: Vec<ObjectID> = Self::de(object_ids_bs.to_vec())?;
                                 if object_ids.len() == 1 || object_ids.is_empty() {
                                     // If this label has only one object it can be removed
-                                    tx_labels.remove(label_id.clone())?;
-                                    tx_slebal.remove(Self::ser(label)?)?;
+                                    let lbl: String = match tx_labels.remove(label_id.clone())? {
+                                        Some(bytes) => {
+                                            String::from_utf8(bytes.to_vec()).map_err(|e| {
+                                                UnabortableTransactionError::Storage(
+                                                    sled::Error::Io(std::io::Error::other(e)),
+                                                )
+                                            })?
+                                        }
+                                        None => String::new(),
+                                    };
+                                    tx_slebal.remove(lbl.as_bytes())?;
                                     continue;
                                 }
 

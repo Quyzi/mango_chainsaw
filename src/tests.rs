@@ -3,15 +3,15 @@ use crate::{common::Label, db::Db, insert::InsertRequest, query::QueryRequest};
 use anyhow::Result;
 use bytes::Bytes;
 use log::LevelFilter;
-
-use simplelog::Config as LogConfig;
+use simplelog::ConfigBuilder;
 use simplelog::{ColorChoice, CombinedLogger, TermLogger, TerminalMode};
-
-use walkdir::WalkDir;
 
 use std::path::PathBuf;
 use std::{fs, io::Read};
+use walkdir::WalkDir;
 
+/// Create a bunch of insertrequests
+#[trace]
 fn create_payloads(db: Db) -> Result<Vec<InsertRequest>> {
     let mut payloads = vec![];
 
@@ -85,6 +85,7 @@ fn create_payloads(db: Db) -> Result<Vec<InsertRequest>> {
 }
 
 /// build a test db using the current source code as data.
+#[trace]
 fn e2e_build() -> Result<()> {
     let path = PathBuf::from("./temp");
     let db = Db::open(path.as_path())?;
@@ -92,12 +93,12 @@ fn e2e_build() -> Result<()> {
     let ns = db.open_namespace("files")?;
 
     let payloads = create_payloads(db.clone())?;
-    let _num = payloads.len();
+    log::info!("inserted {} objects", payloads.len());
+
     let mut inserted_ids = vec![];
     for payload in payloads {
         let objectid = payload.execute(&ns)?;
         inserted_ids.push(objectid);
-        log::info!("added object with id {objectid}");
     }
     db.flush_sync()?;
 
@@ -105,6 +106,7 @@ fn e2e_build() -> Result<()> {
 }
 
 /// Get just the "code-mutable" objects using an exact include label
+#[trace]
 fn e2e_query_include() -> Result<()> {
     let path = PathBuf::from("./temp");
     let db = Db::open(path.as_path())?;
@@ -115,12 +117,12 @@ fn e2e_query_include() -> Result<()> {
     req.include(Label::new("mango_chainsaw.test/content_type=code-mutable"))?;
 
     let object_ids = req.execute(&ns)?;
+    log::info!("exact match query found {} objects", object_ids.len());
     let objects = ns.get_all(object_ids)?;
 
-    for (id, labels, contents) in objects {
-        let labels = labels.unwrap();
-        let contents: String = flexbuffers::from_slice(&contents.unwrap())?;
-        log::info!("id={id}; labels={labels:?} :: {}", contents.len() as u64);
+    for (_id, labels, contents) in objects {
+        let _labels = labels.unwrap();
+        let _contents: String = flexbuffers::from_slice(&contents.unwrap())?;
     }
 
     db.flush_sync()?;
@@ -128,6 +130,7 @@ fn e2e_query_include() -> Result<()> {
 }
 
 /// Get just the "code-mutable" objects using a prefix and excludes
+#[trace]
 fn e2e_query_prefix_exclude() -> Result<()> {
     let path = PathBuf::from("./temp");
     let db = Db::open(path.as_path())?;
@@ -140,22 +143,17 @@ fn e2e_query_prefix_exclude() -> Result<()> {
     req.exclude(Label::new("mango_chainsaw.test/content_type=code-misc"))?;
 
     let object_ids = req.execute(&ns)?;
-    let objects = ns.get_all(object_ids)?;
+    log::info!("prefix query found {} objects", object_ids.len());
 
-    for (id, labels, contents) in objects {
-        let labels = labels.unwrap();
-        // let contents: String = flexbuffers::from_slice(&contents.unwrap().to_vec())?;
-        log::info!(
-            "id={id}; labels={labels:?} :: {}",
-            contents.unwrap().len() as u64
-        );
-    }
+    let objects = ns.get_all(object_ids.clone())?;
+    assert_eq!(object_ids.len(), objects.len());
 
     db.flush_sync()?;
     Ok(())
 }
 
 /// Delete the code-mutable objects
+#[trace]
 fn e2e_delete() -> Result<()> {
     let path = PathBuf::from("./temp");
     let db = Db::open(path.as_path())?;
@@ -167,6 +165,7 @@ fn e2e_delete() -> Result<()> {
     req.exclude(Label::new("mango_chainsaw.test/content_type=code-misc"))?;
 
     let results = req.execute(&ns)?;
+    log::info!("deleting {} objects", results.len());
     let req = DeleteRequest::new();
     for object_id in results {
         req.add_object(object_id)?;
@@ -177,19 +176,28 @@ fn e2e_delete() -> Result<()> {
     Ok(())
 }
 
+use minitrace::collector::{Config, ConsoleReporter};
+use minitrace::prelude::*;
+
 #[test]
 fn e2e_test() -> Result<()> {
     let _ = CombinedLogger::init(vec![TermLogger::new(
-        LevelFilter::Info,
-        LogConfig::default(),
+        LevelFilter::Trace,
+        ConfigBuilder::new().add_filter_ignore_str("sled").build(),
         TerminalMode::Mixed,
         ColorChoice::Auto,
     )]);
+
+    minitrace::set_reporter(ConsoleReporter, Config::default());
 
     e2e_build()?;
     e2e_query_include()?;
     e2e_query_prefix_exclude()?;
     e2e_delete()?;
+    e2e_query_include()?;
     e2e_query_prefix_exclude()?;
+
+    minitrace::flush();
+
     Ok(())
 }

@@ -1,11 +1,11 @@
 use crate::{common::*, namespace::Namespace};
 use anyhow::{anyhow, Result};
 use flexbuffers::FlexbufferSerializer;
+use minitrace::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{cell::RefCell, collections::HashSet, fmt::Display};
 use thiserror::Error;
-
 /// A Query Error
 #[derive(Debug, Clone, Error)]
 pub enum QueryError {
@@ -144,6 +144,7 @@ impl QueryRequest {
     /// This will return a set of `ObjectID`s that match:
     /// 1. Any of the include `Label`s
     /// 2. None of the exclude `Label`s
+    #[trace]
     pub fn execute(&self, ns: &Namespace) -> Result<Vec<ObjectID>> {
         if self.is_executed()? {
             return Err(anyhow!(QueryError::AlreadyExecuted));
@@ -155,7 +156,6 @@ impl QueryRequest {
         if !self.is_executed()? {
             let mut executed = self.executed.try_borrow_mut()?;
             *executed = true;
-            log::info!("query is not executed")
         } else {
             return Err(anyhow!(QueryError::AlreadyExecuted));
         }
@@ -164,20 +164,12 @@ impl QueryRequest {
         let excludes = self.exclude_labels.try_borrow()?.clone();
         let include_prefixes = self.include_prefix.try_borrow()?.clone();
 
-        log::info!(
-            "query includes={:?} exlcudes={:?} prefixes={:?}",
-            includes,
-            excludes,
-            include_prefixes
-        );
         let mut all_includes: HashSet<Label> = includes;
         for label in include_prefixes {
-            log::info!("checking prefix {label}");
             let prefix = label.data.as_bytes();
             let mut scanner = slebal.scan_prefix(prefix);
             while let Some(Ok((bytes, _))) = scanner.next() {
                 let lbl: String = String::from_utf8(bytes.to_vec())?;
-                log::info!("query found label {lbl} from prefix {label}");
                 all_includes.insert(Label::new(&lbl));
             }
         }
@@ -187,12 +179,9 @@ impl QueryRequest {
             match slebal_atad.get(Self::ser(label.id())?) {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
-                    log::info!("query found objects with label={label}: {object_ids:?}");
                     include_object_ids.extend(object_ids.iter());
                 }
-                Ok(None) => {
-                    log::info!("query found no objects with label={label}");
-                }
+                Ok(None) => {}
                 Err(e) => return Err(anyhow!(e)),
             }
         }
@@ -202,7 +191,6 @@ impl QueryRequest {
             match slebal_atad.get(Self::ser(label.id())?) {
                 Ok(Some(bs)) => {
                     let object_ids: Vec<ObjectID> = Self::de(bs.to_vec())?;
-                    log::info!("query excluding objects with label={label}: {object_ids:?}");
                     exclude_label_ids.extend(object_ids.iter());
                 }
                 Ok(None) => {}
@@ -217,8 +205,6 @@ impl QueryRequest {
                 false => Some(*id),
             })
             .collect();
-
-        log::info!("query exeuted. results: {results:#?}");
 
         Ok(results)
     }
