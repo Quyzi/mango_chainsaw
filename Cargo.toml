@@ -9,10 +9,6 @@ edition = "2021"
 name = "libmangochainsaw"
 path = "src/lib.rs"
 
-# [[bin]]
-# name = "mangos"
-# path = "cmd/main.rs"
-
 [dependencies]
 bytes = { version = "1.5.0", features = ["serde"] }
 log = "0.4.20"
@@ -33,6 +29,7 @@ error-stack = { version = "0.4.1", features = ["anyhow"] }
 thiserror = "1.0.50"
 futures = "0.3.29"
 tempfile = "3.8.1"
+minitrace = "0.6"
 
 [dev-dependencies]
 walkdir = "2.4.0"
