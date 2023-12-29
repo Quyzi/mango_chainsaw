@@ -5,13 +5,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use serde_derive::{Deserialize, Serialize};
 use sled::IVec;
-
-pub trait IsAnObject {}
-
-impl<T> IsAnObject for T where T: Serialize + DeserializeOwned {}
 
 pub type ObjectID = u64;
 
