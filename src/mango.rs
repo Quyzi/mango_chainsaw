@@ -17,28 +17,28 @@ impl Mango {
     pub fn get_bucket(&self, name: &str) -> Result<Bucket> {
         Bucket::open(name, self.clone())
     }
+
+    pub fn empty_bucket(&self, name: &str) -> Result<()> {
+        let b = Bucket::open(name, self.clone())?;
+        b.empty()?;
+        Ok(())
+    }
 }
 
 impl TryFrom<PathBuf> for Mango {
     type Error = anyhow::Error;
 
     fn try_from(value: PathBuf) -> std::result::Result<Self, Self::Error> {
-        let this = sled::open(value.clone())?;
+        let this = sled::Config::new()
+            .path(value.clone())
+            .compression_factor(16)
+            .mode(sled::Mode::HighThroughput)
+            .idgen_persist_interval(5000)
+            .use_compression(true)
+            .open()?;
         Ok(Self {
             inner: this,
             path: value,
-        })
-    }
-}
-
-impl<'a> TryFrom<&'a Path> for Mango {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &'a Path) -> std::result::Result<Self, Self::Error> {
-        let this = sled::open(value)?;
-        Ok(Self {
-            inner: this,
-            path: value.to_path_buf(),
         })
     }
 }

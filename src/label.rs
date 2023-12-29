@@ -3,10 +3,7 @@ use bytes::Bytes;
 use serde::Serialize;
 use serde_derive::{Deserialize, Serialize};
 use sled::IVec;
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
+use std::hash::Hash;
 
 pub const SEPARATOR: &str = "\u{001F}";
 
@@ -18,12 +15,6 @@ impl Label {
     /// Create a new label
     pub fn new(lhs: &str, rhs: &str) -> Self {
         Self(lhs.to_string(), rhs.to_string())
-    }
-
-    pub fn hash_id(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
     }
 
     pub fn to_string_ltr(&self) -> String {

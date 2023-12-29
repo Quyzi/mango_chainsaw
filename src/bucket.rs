@@ -58,7 +58,7 @@ impl Bucket {
         Ok(*ok)
     }
 
-    pub fn drop(&self) -> Result<()> {
+    pub fn empty(&self) -> Result<()> {
         let name = &self.name;
         let db = self.parent.inner.clone();
         db.drop_tree(format!("{name}{SEPARATOR}labels"))?;

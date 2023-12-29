@@ -15,7 +15,7 @@ log = "0.4.20"
 rayon = "1.8.0"
 serde = "1.0"
 serde_derive = "1.0"
-sled = "0.34.7"
+sled = { version = "0.34.7", features = ["compression", "event_log"] }
 tokio = { version = "1.33.0", features = ["full"] }
 clap = { version = "4.4.7", features = ["derive"] }
 figment = { version = "0.10.11", features = ["json", "yaml", "env"] }

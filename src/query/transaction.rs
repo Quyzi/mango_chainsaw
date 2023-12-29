@@ -134,12 +134,13 @@ impl Transaction {
             &self.namespace.t_labels_objects,
         )
             .transaction(|(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)| {
-                let mut n = 1;
-                let l = requests.len();
-                for req in &requests {
+                for (n, req) in requests.iter().enumerate() {
                     req.execute(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)?;
-                    log::trace!("completed request {n} of {} in transaction", l);
-                    n += 1;
+                    log::trace!(
+                        "completed request {} of {} in transaction",
+                        n + 1,
+                        requests.len()
+                    );
                 }
                 Ok::<(), ConflictableTransactionError<String>>(())
             })
