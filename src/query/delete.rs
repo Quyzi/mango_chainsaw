@@ -68,12 +68,9 @@ impl<'a> ExecuteTransaction<'a> for DeleteRequest {
             })?
             .clone();
 
-        let prune = *self
-            .prune
-            .try_borrow()
-            .map_err(|e| {
-                UnabortableTransactionError::Storage(sled::Error::Io(std::io::Error::other(e)))
-            })?;
+        let prune = *self.prune.try_borrow().map_err(|e| {
+            UnabortableTransactionError::Storage(sled::Error::Io(std::io::Error::other(e)))
+        })?;
 
         for id in ids {
             let key_bytes = Self::transaction_ser(id)?;
@@ -137,8 +134,8 @@ impl<'a> ExecuteTransaction<'a> for DeleteRequest {
                 // Get the list of objectIDs described by the label
                 match lbl_obj.remove(key_bytes.to_vec())? {
                     Some(bytes) => {
-                        let this = Self::transaction_de::<Vec<ObjectID>>(bytes.to_vec().into())?;
-                        let new = this
+                        let old = Self::transaction_de::<Vec<ObjectID>>(bytes.to_vec().into())?;
+                        let new = old
                             .into_iter()
                             .filter(|i| i != &id)
                             .collect::<Vec<ObjectID>>();

@@ -14,7 +14,7 @@ impl Mango {
         path.to_path_buf().try_into()
     }
 
-    pub fn get_namespace(&self, name: &str) -> Result<Bucket> {
+    pub fn get_bucket(&self, name: &str) -> Result<Bucket> {
         Bucket::open(name, self.clone())
     }
 }
@@ -22,7 +22,7 @@ impl Mango {
 impl TryFrom<PathBuf> for Mango {
     type Error = anyhow::Error;
 
-    fn try_from(value: PathBuf) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn try_from(value: PathBuf) -> std::result::Result<Self, Self::Error> {
         let this = sled::open(value.clone())?;
         Ok(Self {
             inner: this,
@@ -34,7 +34,7 @@ impl TryFrom<PathBuf> for Mango {
 impl<'a> TryFrom<&'a Path> for Mango {
     type Error = anyhow::Error;
 
-    fn try_from(value: &'a Path) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn try_from(value: &'a Path) -> std::result::Result<Self, Self::Error> {
         let this = sled::open(value)?;
         Ok(Self {
             inner: this,

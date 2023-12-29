@@ -16,13 +16,16 @@ use thiserror::Error;
 use super::cswap::CompareSwapRequest;
 use super::delete::DeleteRequest;
 use super::find::FindRequest;
+use super::get::GetRequest;
 use super::insert::InsertRequest;
 
+#[derive(Clone)]
 pub enum Request {
     Insert(InsertRequest),
     Delete(DeleteRequest),
     CompareSwap(CompareSwapRequest),
     Find(FindRequest),
+    Get(GetRequest),
 }
 
 impl<'a> ExecuteTransaction<'a> for Request {
@@ -50,18 +53,23 @@ impl<'a> ExecuteTransaction<'a> for Request {
                 Ok(oid) => Ok(RequestResult::Insert(r.clone(), Ok(oid))),
                 Err(e) => Ok(RequestResult::Insert(r.clone(), Err(e.into()))),
             },
-            Request::Delete(_r) => todo!(),
+            Request::Delete(r) => match r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj) {
+                Ok(results) => Ok(RequestResult::Delete(r.clone(), Ok(results))),
+                Err(e) => Ok(RequestResult::Delete(r.clone(), Err(e.into()))),
+            },
             Request::CompareSwap(_r) => todo!(),
             Request::Find(_r) => todo!(),
+            Request::Get(_g) => todo!(),
         }
     }
 }
 
 pub enum RequestResult {
     Insert(InsertRequest, Result<ObjectID>),
-    Delete(DeleteRequest, Result<Option<Object>>),
+    Delete(DeleteRequest, Result<Vec<(u64, bool)>>),
     CompareSwap(CompareSwapRequest, Result<Option<Object>>),
     Find(FindRequest, Result<Vec<ObjectID>>),
+    Get(GetRequest, Result<Object>),
 }
 
 #[derive(Error, Debug, SerDerive, DeDerive)]
@@ -116,7 +124,7 @@ impl Transaction {
             Err(e) => return Err(anyhow!(e)),
         }
 
-        let requests = self.reqs.try_borrow()?;
+        let requests = self.reqs.try_borrow()?.to_vec();
 
         (
             &self.namespace.t_labels,
@@ -126,13 +134,27 @@ impl Transaction {
             &self.namespace.t_labels_objects,
         )
             .transaction(|(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)| {
-                for req in &*requests {
+                let mut n = 1;
+                let l = requests.len();
+                for req in &requests {
                     req.execute(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)?;
+                    log::trace!("completed request {n} of {} in transaction", l);
+                    n += 1;
                 }
                 Ok::<(), ConflictableTransactionError<String>>(())
             })
             .map_err(|e| anyhow!("{}", e))?;
         Ok(())
+    }
+
+    pub fn len(&self) -> Result<usize> {
+        let r = self.reqs.try_borrow()?;
+        Ok(r.len())
+    }
+
+    pub fn is_empty(&self) -> Result<bool> {
+        let r = self.reqs.try_borrow()?;
+        Ok(r.is_empty())
     }
 }
 

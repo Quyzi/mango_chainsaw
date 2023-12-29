@@ -11,7 +11,7 @@ use std::{
 pub const SEPARATOR: &str = "\u{001F}";
 
 /// Labels are key=value pairs describing an Object.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Label(pub(crate) String, pub(crate) String);
 
 impl Label {
@@ -29,7 +29,7 @@ impl Label {
     pub fn to_string_ltr(&self) -> String {
         format!("{}{SEPARATOR}{}", self.0, self.1)
     }
-    
+
     pub fn to_string_rtl(&self) -> String {
         format!("{}{SEPARATOR}{}", self.1, self.0)
     }
