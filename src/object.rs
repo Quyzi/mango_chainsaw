@@ -42,7 +42,8 @@ impl TryFrom<IVec> for Object {
     type Error = anyhow::Error;
 
     fn try_from(value: IVec) -> Result<Self, Self::Error> {
-        let this = flexbuffers::from_slice(&value)?;
+        let inner = flexbuffers::from_slice(&value)?;
+        let this = Self { inner };
         Ok(this)
     }
 }
@@ -52,8 +53,28 @@ impl TryInto<IVec> for Object {
 
     fn try_into(self) -> Result<IVec, Self::Error> {
         let mut s = flexbuffers::FlexbufferSerializer::new();
-        self.serialize(&mut s)?;
+        self.inner.serialize(&mut s)?;
         Ok(s.take_buffer().into())
+    }
+}
+
+impl TryFrom<Vec<u8>> for Object {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let inner = flexbuffers::from_slice(&value)?;
+        let this = Self { inner };
+        Ok(this)
+    }
+}
+
+impl TryInto<Vec<u8>> for Object {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        let mut s = flexbuffers::FlexbufferSerializer::new();
+        self.inner.serialize(&mut s)?;
+        Ok(s.take_buffer())
     }
 }
 

@@ -1,10 +1,7 @@
-use flexbuffers::FlexbufferSerializer;
+use crate::{label::Label, object::ObjectID, query::execute::*};
+use anyhow::Result;
 use sled::transaction::UnabortableTransactionError;
 use std::cell::RefCell;
-
-use crate::{label::Label, object::ObjectID};
-
-use super::transaction::ExecuteTransaction;
 
 #[derive(Clone, Debug)]
 pub struct DeleteRequest {
@@ -26,29 +23,35 @@ impl From<Vec<ObjectID>> for DeleteRequest {
     }
 }
 
-impl DeleteRequest {}
+impl DeleteRequest {
+    pub fn new(ids: Vec<ObjectID>) -> Self {
+        ids.into()
+    }
+
+    pub fn add_id(&self, id: ObjectID) -> Result<usize> {
+        let mut ids = self.objects.try_borrow_mut()?;
+        ids.push(id);
+        ids.sort();
+        ids.dedup();
+        Ok(ids.len())
+    }
+
+    pub fn set_ids(&self, ids: Vec<ObjectID>) -> Result<usize> {
+        let mut my_ids = self.objects.try_borrow_mut()?;
+        *my_ids = ids;
+        Ok(my_ids.len())
+    }
+
+    pub fn prune(&self, yes: bool) -> Result<bool> {
+        let mut prune = self.prune.try_borrow_mut()?;
+        *prune = yes;
+        Ok(*prune)
+    }
+}
 
 impl<'a> ExecuteTransaction<'a> for DeleteRequest {
     type Error = UnabortableTransactionError;
     type Output = Vec<(ObjectID, bool)>;
-
-    fn transaction_ser<T: serde::Serialize>(item: T) -> anyhow::Result<bytes::Bytes, Self::Error> {
-        let mut s = FlexbufferSerializer::new();
-        match item.serialize(&mut s) {
-            Ok(_) => Ok(s.take_buffer().into()),
-            Err(e) => Err(UnabortableTransactionError::Storage(sled::Error::Io(
-                std::io::Error::other(e),
-            ))),
-        }
-    }
-
-    fn transaction_de<T: serde::de::DeserializeOwned>(
-        bytes: bytes::Bytes,
-    ) -> anyhow::Result<T, Self::Error> {
-        flexbuffers::from_slice(&bytes).map_err(|e| {
-            UnabortableTransactionError::Storage(sled::Error::Io(std::io::Error::other(e)))
-        })
-    }
 
     fn execute(
         &self,

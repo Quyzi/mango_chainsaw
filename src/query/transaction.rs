@@ -1,44 +1,52 @@
-use crate::label::Label;
-use crate::object::Object;
-use crate::{bucket::Bucket, object::ObjectID};
+use crate::bucket::Bucket;
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use serde_derive::{Deserialize as DeDerive, Serialize as SerDerive};
 use sled::transaction::{
     ConflictableTransactionError, TransactionalTree, UnabortableTransactionError,
 };
 use sled::Transactional;
 use std::cell::RefCell;
-use thiserror::Error;
 
-use super::cswap::CompareSwapRequest;
 use super::delete::DeleteRequest;
+use super::error::*;
+use super::execute::ExecuteTransaction;
 use super::find::FindRequest;
-use super::get::GetRequest;
 use super::insert::InsertRequest;
 
 #[derive(Clone)]
 pub enum Request {
     Insert(InsertRequest),
     Delete(DeleteRequest),
-    CompareSwap(CompareSwapRequest),
     Find(FindRequest),
-    Get(GetRequest),
+}
+
+#[derive(Clone)]
+pub enum RequestResult<'a> {
+    Insert(
+        InsertRequest,
+        std::result::Result<
+            <InsertRequest as ExecuteTransaction<'a>>::Output,
+            <InsertRequest as ExecuteTransaction<'a>>::Error,
+        >,
+    ),
+    Delete(
+        DeleteRequest,
+        std::result::Result<
+            <DeleteRequest as ExecuteTransaction<'a>>::Output,
+            <DeleteRequest as ExecuteTransaction<'a>>::Error,
+        >,
+    ),
+    Find(
+        FindRequest,
+        std::result::Result<
+            <FindRequest as ExecuteTransaction<'a>>::Output,
+            <FindRequest as ExecuteTransaction<'a>>::Error,
+        >,
+    ),
 }
 
 impl<'a> ExecuteTransaction<'a> for Request {
     type Error = UnabortableTransactionError;
-    type Output = RequestResult;
-
-    fn transaction_ser<T: Serialize>(_item: T) -> Result<Bytes, Self::Error> {
-        unreachable!()
-    }
-
-    fn transaction_de<T: DeserializeOwned>(_bytes: Bytes) -> Result<T, Self::Error> {
-        unreachable!()
-    }
+    type Output = RequestResult<'a>;
 
     fn execute(
         &self,
@@ -49,43 +57,39 @@ impl<'a> ExecuteTransaction<'a> for Request {
         lbl_obj: &'a TransactionalTree,
     ) -> Result<Self::Output, Self::Error> {
         match self {
-            Request::Insert(r) => match r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj) {
-                Ok(oid) => Ok(RequestResult::Insert(r.clone(), Ok(oid))),
-                Err(e) => Ok(RequestResult::Insert(r.clone(), Err(e.into()))),
-            },
-            Request::Delete(r) => match r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj) {
-                Ok(results) => Ok(RequestResult::Delete(r.clone(), Ok(results))),
-                Err(e) => Ok(RequestResult::Delete(r.clone(), Err(e.into()))),
-            },
-            Request::CompareSwap(_r) => todo!(),
-            Request::Find(_r) => todo!(),
-            Request::Get(_g) => todo!(),
+            Request::Insert(r) => {
+                let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
+                match inner {
+                    Ok(_) => Ok(RequestResult::Insert(r.clone(), inner)),
+                    Err(e) => Err(e),
+                }
+            }
+            Request::Delete(r) => {
+                let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
+                match inner {
+                    Ok(_) => Ok(RequestResult::Delete(r.clone(), inner)),
+                    Err(e) => Err(e),
+                }
+            }
+            Request::Find(r) => {
+                let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
+                match inner {
+                    Ok(_) => Ok(RequestResult::Find(r.clone(), inner)),
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 }
 
-pub enum RequestResult {
-    Insert(InsertRequest, Result<ObjectID>),
-    Delete(DeleteRequest, Result<Vec<(u64, bool)>>),
-    CompareSwap(CompareSwapRequest, Result<Option<Object>>),
-    Find(FindRequest, Result<Vec<ObjectID>>),
-    Get(GetRequest, Result<Object>),
-}
-
-#[derive(Error, Debug, SerDerive, DeDerive)]
-pub enum TransactionError {
-    #[error("transaction already executed")]
-    AlreadyExecuted,
-}
-
-pub struct Transaction {
+pub struct Transaction<'a> {
     pub(crate) namespace: Bucket,
     pub(crate) reqs: RefCell<Vec<Request>>,
-    pub(crate) results: RefCell<Vec<RequestResult>>,
+    pub(crate) results: RefCell<Vec<RequestResult<'a>>>,
     pub(crate) completed: RefCell<bool>,
 }
 
-impl Transaction {
+impl<'a> Transaction<'a> {
     pub fn new(ns: Bucket) -> Self {
         (&ns).into()
     }
@@ -159,7 +163,7 @@ impl Transaction {
     }
 }
 
-impl From<&Bucket> for Transaction {
+impl<'a> From<&Bucket> for Transaction<'a> {
     fn from(value: &Bucket) -> Self {
         Self {
             namespace: value.clone(),
@@ -168,34 +172,4 @@ impl From<&Bucket> for Transaction {
             completed: RefCell::new(false),
         }
     }
-}
-
-pub(crate) trait ExecuteTransaction<'a> {
-    type Error;
-    type Output;
-
-    fn transaction_ser<T: Serialize>(item: T) -> Result<Bytes, Self::Error>;
-    fn transaction_de<T: DeserializeOwned>(bytes: Bytes) -> Result<T, Self::Error>;
-
-    fn ser_label(_label: Label) -> Result<Bytes, Self::Error> {
-        unreachable!()
-    }
-    fn ser_label_invert(_label: Label) -> Result<Bytes, Self::Error> {
-        unreachable!()
-    }
-    fn de_label(_bytes: Bytes) -> Result<Label, Self::Error> {
-        unreachable!()
-    }
-    fn de_label_invert(_bytes: Bytes) -> Result<Label, Self::Error> {
-        unreachable!()
-    }
-
-    fn execute(
-        &self,
-        lbl: &'a TransactionalTree,
-        ilbl: &'a TransactionalTree,
-        obj: &'a TransactionalTree,
-        objlbl: &'a TransactionalTree,
-        objilbl: &'a TransactionalTree,
-    ) -> Result<Self::Output, Self::Error>;
 }

@@ -23,6 +23,20 @@ impl Mango {
         b.empty()?;
         Ok(())
     }
+
+    pub fn new_temp() -> Result<Self> {
+        let this = sled::Config::new()
+            .temporary(true)
+            .compression_factor(16)
+            .mode(sled::Mode::HighThroughput)
+            .idgen_persist_interval(5000)
+            .use_compression(true)
+            .open()?;
+        Ok(Self {
+            inner: this,
+            path: ".".into(),
+        })
+    }
 }
 
 impl TryFrom<PathBuf> for Mango {

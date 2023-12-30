@@ -1,17 +1,13 @@
-use anyhow::Result;
-use bytes::Bytes;
-use flexbuffers::FlexbufferSerializer;
-use sled::transaction::{TransactionalTree, UnabortableTransactionError};
-use std::{cell::RefCell, io};
-
-use crate::label::SEPARATOR;
 use crate::mango::Mango;
+use crate::query::execute::*;
 use crate::{
     label::Label,
     object::{Object, ObjectID},
 };
-
-use super::transaction::ExecuteTransaction;
+use anyhow::Result;
+use bytes::Bytes;
+use sled::transaction::{TransactionalTree, UnabortableTransactionError};
+use std::{cell::RefCell, io};
 
 #[derive(Clone, Debug)]
 pub struct InsertRequest {
@@ -72,29 +68,6 @@ impl<'a> ExecuteTransaction<'a> for InsertRequest {
     type Error = UnabortableTransactionError;
     type Output = ObjectID;
 
-    fn transaction_ser<T: serde::Serialize>(item: T) -> Result<Bytes, Self::Error> {
-        let mut s = FlexbufferSerializer::new();
-        match item.serialize(&mut s) {
-            Ok(_) => Ok(s.take_buffer().into()),
-            Err(e) => Err(UnabortableTransactionError::Storage(sled::Error::Io(
-                io::Error::other(e),
-            ))),
-        }
-    }
-
-    fn transaction_de<T: serde::de::DeserializeOwned>(bytes: Bytes) -> Result<T, Self::Error> {
-        flexbuffers::from_slice(&bytes)
-            .map_err(|e| UnabortableTransactionError::Storage(sled::Error::Io(io::Error::other(e))))
-    }
-
-    fn ser_label(label: Label) -> Result<Bytes, Self::Error> {
-        Self::transaction_ser(format!("{}{}{}", label.0, SEPARATOR, label.1))
-    }
-
-    fn ser_label_invert(label: Label) -> Result<Bytes, Self::Error> {
-        Self::transaction_ser(format!("{}{}{}", label.1, SEPARATOR, label.0))
-    }
-
     fn execute(
         &self,
         lbl: &'a TransactionalTree,
@@ -122,10 +95,7 @@ impl<'a> ExecuteTransaction<'a> for InsertRequest {
             log::trace!("Inserted bytes for object with id {object_id}");
         }
 
-        let mut label_ids = vec![];
-        for label in labels {
-            label_ids.push(label.to_string_ltr());
-
+        for label in &labels {
             // Insert key=value to labels tree
             {
                 let key_bytes = Self::ser_label(label.clone())?;
@@ -176,7 +146,7 @@ impl<'a> ExecuteTransaction<'a> for InsertRequest {
         // Add object id = [labels] to objects labels tree
         {
             let key_bytes = Self::transaction_ser(object_id)?;
-            let val_bytes = Self::transaction_ser(label_ids)?;
+            let val_bytes = Self::transaction_ser(labels)?;
             obj_lbl.insert(key_bytes.to_vec(), val_bytes.to_vec())?;
             log::trace!("Inserted labels for object with id {object_id} into objects_labels tree.");
         }
