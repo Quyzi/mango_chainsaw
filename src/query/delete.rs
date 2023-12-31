@@ -49,17 +49,17 @@ impl DeleteRequest {
     }
 }
 
-impl<'a> ExecuteTransaction<'a> for DeleteRequest {
+impl ExecuteTransaction for DeleteRequest {
     type Error = UnabortableTransactionError;
     type Output = Vec<(ObjectID, bool)>;
 
     fn execute(
         &self,
-        lbl: &'a sled::transaction::TransactionalTree,
-        lbl_invert: &'a sled::transaction::TransactionalTree,
-        obj: &'a sled::transaction::TransactionalTree,
-        obj_lbl: &'a sled::transaction::TransactionalTree,
-        lbl_obj: &'a sled::transaction::TransactionalTree,
+        lbl: &sled::transaction::TransactionalTree,
+        lbl_invert: &sled::transaction::TransactionalTree,
+        obj: &sled::transaction::TransactionalTree,
+        obj_lbl: &sled::transaction::TransactionalTree,
+        lbl_obj: &sled::transaction::TransactionalTree,
     ) -> anyhow::Result<Self::Output, Self::Error> {
         let mut results = vec![];
 

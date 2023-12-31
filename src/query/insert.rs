@@ -64,17 +64,17 @@ impl From<Bytes> for InsertRequest {
     }
 }
 
-impl<'a> ExecuteTransaction<'a> for InsertRequest {
+impl ExecuteTransaction for InsertRequest {
     type Error = UnabortableTransactionError;
     type Output = ObjectID;
 
     fn execute(
         &self,
-        lbl: &'a TransactionalTree,
-        lbl_invert: &'a TransactionalTree,
-        obj: &'a TransactionalTree,
-        obj_lbl: &'a TransactionalTree,
-        lbl_obj: &'a TransactionalTree,
+        lbl: &TransactionalTree,
+        lbl_invert: &TransactionalTree,
+        obj: &TransactionalTree,
+        obj_lbl: &TransactionalTree,
+        lbl_obj: &TransactionalTree,
     ) -> Result<Self::Output, Self::Error> {
         let object_id = *self.id.try_borrow().map_err(|e| {
             UnabortableTransactionError::Storage(sled::Error::Io(io::Error::other(e)))

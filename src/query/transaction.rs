@@ -1,5 +1,6 @@
 use crate::bucket::Bucket;
 use anyhow::{anyhow, Result};
+
 use sled::transaction::{
     ConflictableTransactionError, TransactionalTree, UnabortableTransactionError,
 };
@@ -10,6 +11,7 @@ use super::delete::DeleteRequest;
 use super::error::*;
 use super::execute::ExecuteTransaction;
 use super::find::FindRequest;
+use super::get::GetRequest;
 use super::insert::InsertRequest;
 
 #[derive(Clone)]
@@ -17,64 +19,100 @@ pub enum Request {
     Insert(InsertRequest),
     Delete(DeleteRequest),
     Find(FindRequest),
+    Get(GetRequest),
 }
 
-#[derive(Clone)]
-pub enum RequestResult<'a> {
+impl From<InsertRequest> for Request {
+    fn from(value: InsertRequest) -> Self {
+        Self::Insert(value)
+    }
+}
+impl From<DeleteRequest> for Request {
+    fn from(value: DeleteRequest) -> Self {
+        Self::Delete(value)
+    }
+}
+impl From<FindRequest> for Request {
+    fn from(value: FindRequest) -> Self {
+        Self::Find(value)
+    }
+}
+impl From<GetRequest> for Request {
+    fn from(value: GetRequest) -> Self {
+        Self::Get(value)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RequestResult {
     Insert(
-        InsertRequest,
+        Box<InsertRequest>,
         std::result::Result<
-            <InsertRequest as ExecuteTransaction<'a>>::Output,
-            <InsertRequest as ExecuteTransaction<'a>>::Error,
+            <InsertRequest as ExecuteTransaction>::Output,
+            <InsertRequest as ExecuteTransaction>::Error,
         >,
     ),
     Delete(
-        DeleteRequest,
+        Box<DeleteRequest>,
         std::result::Result<
-            <DeleteRequest as ExecuteTransaction<'a>>::Output,
-            <DeleteRequest as ExecuteTransaction<'a>>::Error,
+            <DeleteRequest as ExecuteTransaction>::Output,
+            <DeleteRequest as ExecuteTransaction>::Error,
         >,
     ),
     Find(
-        FindRequest,
+        Box<FindRequest>,
         std::result::Result<
-            <FindRequest as ExecuteTransaction<'a>>::Output,
-            <FindRequest as ExecuteTransaction<'a>>::Error,
+            <FindRequest as ExecuteTransaction>::Output,
+            <FindRequest as ExecuteTransaction>::Error,
+        >,
+    ),
+    Get(
+        Box<GetRequest>,
+        std::result::Result<
+            <GetRequest as ExecuteTransaction>::Output,
+            <GetRequest as ExecuteTransaction>::Error,
         >,
     ),
 }
 
-impl<'a> ExecuteTransaction<'a> for Request {
+impl ExecuteTransaction for Request {
     type Error = UnabortableTransactionError;
-    type Output = RequestResult<'a>;
+    type Output = RequestResult;
 
     fn execute(
         &self,
-        lbl: &'a TransactionalTree,
-        lbl_invert: &'a TransactionalTree,
-        obj: &'a TransactionalTree,
-        obj_lbl: &'a TransactionalTree,
-        lbl_obj: &'a TransactionalTree,
+        lbl: &TransactionalTree,
+        lbl_invert: &TransactionalTree,
+        obj: &TransactionalTree,
+        obj_lbl: &TransactionalTree,
+        lbl_obj: &TransactionalTree,
     ) -> Result<Self::Output, Self::Error> {
         match self {
             Request::Insert(r) => {
                 let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
                 match inner {
-                    Ok(_) => Ok(RequestResult::Insert(r.clone(), inner)),
+                    Ok(_) => Ok(RequestResult::Insert(Box::new(r.clone()), inner)),
                     Err(e) => Err(e),
                 }
             }
             Request::Delete(r) => {
                 let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
                 match inner {
-                    Ok(_) => Ok(RequestResult::Delete(r.clone(), inner)),
+                    Ok(_) => Ok(RequestResult::Delete(Box::new(r.clone()), inner)),
                     Err(e) => Err(e),
                 }
             }
             Request::Find(r) => {
                 let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
                 match inner {
-                    Ok(_) => Ok(RequestResult::Find(r.clone(), inner)),
+                    Ok(_) => Ok(RequestResult::Find(Box::new(r.clone()), inner)),
+                    Err(e) => Err(e),
+                }
+            }
+            Request::Get(r) => {
+                let inner = r.execute(lbl, lbl_invert, obj, obj_lbl, lbl_obj);
+                match inner {
+                    Ok(_) => Ok(RequestResult::Get(Box::new(r.clone()), inner)),
                     Err(e) => Err(e),
                 }
             }
@@ -82,14 +120,14 @@ impl<'a> ExecuteTransaction<'a> for Request {
     }
 }
 
-pub struct Transaction<'a> {
+pub struct Transaction {
     pub(crate) namespace: Bucket,
     pub(crate) reqs: RefCell<Vec<Request>>,
-    pub(crate) results: RefCell<Vec<RequestResult<'a>>>,
+    pub(crate) results: RefCell<Vec<RequestResult>>,
     pub(crate) completed: RefCell<bool>,
 }
 
-impl<'a> Transaction<'a> {
+impl Transaction {
     pub fn new(ns: Bucket) -> Self {
         (&ns).into()
     }
@@ -119,6 +157,11 @@ impl<'a> Transaction<'a> {
         Ok(*self.completed.try_borrow()?)
     }
 
+    pub fn results(&self) -> Result<Vec<RequestResult>> {
+        let results = self.results.try_borrow()?;
+        Ok(results.to_owned())
+    }
+
     pub fn execute(&self) -> Result<()> {
         match self.completed.try_borrow() {
             Ok(c) => match *c {
@@ -128,8 +171,9 @@ impl<'a> Transaction<'a> {
             Err(e) => return Err(anyhow!(e)),
         }
 
-        let requests = self.reqs.try_borrow()?.to_vec();
+        let requests = self.reqs.try_borrow()?;
 
+        let results = RefCell::new(vec![]);
         (
             &self.namespace.t_labels,
             &self.namespace.t_labels_invert,
@@ -139,7 +183,15 @@ impl<'a> Transaction<'a> {
         )
             .transaction(|(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)| {
                 for (n, req) in requests.iter().enumerate() {
-                    req.execute(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)?;
+                    let res = req.execute(tx_lbl, tx_ilbl, tx_obj, tx_objlbl, tx_objilbl)?;
+
+                    let mut results = results.try_borrow_mut().map_err(|e| {
+                        ConflictableTransactionError::Storage(sled::Error::Unsupported(
+                            e.to_string(),
+                        ))
+                    })?;
+                    results.push(res);
+
                     log::trace!(
                         "completed request {} of {} in transaction",
                         n + 1,
@@ -149,6 +201,9 @@ impl<'a> Transaction<'a> {
                 Ok::<(), ConflictableTransactionError<String>>(())
             })
             .map_err(|e| anyhow!("{}", e))?;
+
+        let mut my_results = self.results.try_borrow_mut()?;
+        *my_results = results.take();
         Ok(())
     }
 
@@ -163,7 +218,7 @@ impl<'a> Transaction<'a> {
     }
 }
 
-impl<'a> From<&Bucket> for Transaction<'a> {
+impl From<&Bucket> for Transaction {
     fn from(value: &Bucket) -> Self {
         Self {
             namespace: value.clone(),

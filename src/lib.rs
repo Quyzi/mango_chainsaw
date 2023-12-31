@@ -9,7 +9,7 @@ pub mod query;
 mod tests {
     use std::env;
 
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use bytes::Bytes;
     use flexbuffers::FlexbufferSerializer;
     use log::LevelFilter;
@@ -123,6 +123,8 @@ mod tests {
         }
         tx.execute()?;
 
+        let find_tx: Transaction = (&bucket).into();
+
         // Use labels to get the lib.rs file
         let req = FindRequest::new()?;
         req.add_include_group(vec![Label::new("mango_chainsaw/content_type", "library")])?;
@@ -132,22 +134,31 @@ mod tests {
             Label::new("mango_chainsaw/filename", "mango.rs"),
         ])?;
 
-        // let ids = req.execute(bucket.clone())?;
-        // log::info!("found ids: {ids:#?}");
+        find_tx.append_request(req.into())?;
+        find_tx.execute()?;
+        let results = find_tx.results()?;
+        let first = results.first().unwrap();
+        let id = match first {
+            crate::query::transaction::RequestResult::Find(_, Ok(res)) => res.first().unwrap().0,
+            _ => return Err(anyhow!("shit")),
+        };
 
-        // let req = GetRequest::new(ids)?;
+        // Get the object out and compare
+        let original = std::fs::read_to_string("src/lib.rs")?;
 
-        // let items = req.execute(bucket.clone())?;
-        // for item in items {
-        //     let librs = std::fs::read_to_string("src/lib.rs")?;
-
-        //     if let (_id, Some(bytes)) = item {
-        //         let o: Object = bytes.try_into()?;
-        //         let inner = String::from_utf8(o.get_inner().to_vec())?;
-        //         assert_eq!(librs, inner);
-        //     }
-        // }
-
-        Ok(())
+        let tx: Transaction = (&bucket).into();
+        tx.append_request(GetRequest::new(vec![id])?.into())?;
+        tx.execute()?;
+        let results = tx.results()?;
+        let first = results.first().unwrap();
+        match first {
+            crate::query::transaction::RequestResult::Get(_, Ok(res)) => {
+                let bytes = &res.first().unwrap().1;
+                let got = String::from_utf8(bytes.to_vec())?;
+                assert_eq!(original, got);
+                Ok(())
+            }
+            _ => Err(anyhow!("shit 2")),
+        }
     }
 }

@@ -7,7 +7,7 @@ use crate::label::Label;
 
 use super::error::TransactionError;
 
-pub trait ExecuteTransaction<'a> {
+pub trait ExecuteTransaction {
     type Error: std::error::Error + From<TransactionError>;
     type Output;
 
@@ -35,10 +35,10 @@ pub trait ExecuteTransaction<'a> {
 
     fn execute(
         &self,
-        lbl: &'a TransactionalTree,
-        ilbl: &'a TransactionalTree,
-        obj: &'a TransactionalTree,
-        objlbl: &'a TransactionalTree,
-        objilbl: &'a TransactionalTree,
+        lbl: &TransactionalTree,
+        lbl_invert: &TransactionalTree,
+        obj: &TransactionalTree,
+        obj_lbl: &TransactionalTree,
+        lbl_obj: &TransactionalTree,
     ) -> Result<Self::Output, Self::Error>;
 }

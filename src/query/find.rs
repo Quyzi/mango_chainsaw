@@ -6,13 +6,13 @@ use std::{cell::RefCell, collections::HashSet};
 
 use super::execute::ExecuteTransaction;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LabelGroup {
     Include(Vec<Label>),
     Exclude(Vec<Label>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FindRequest {
     groups: RefCell<Vec<LabelGroup>>,
 }
@@ -37,19 +37,27 @@ impl FindRequest {
     }
 }
 
-impl<'a> ExecuteTransaction<'a> for FindRequest {
+impl ExecuteTransaction for FindRequest {
     type Error = UnabortableTransactionError;
     type Output = Vec<(ObjectID, Vec<Label>)>;
 
     fn execute(
         &self,
-        _lbl: &'a sled::transaction::TransactionalTree,
-        _ilbl: &'a sled::transaction::TransactionalTree,
-        _obj: &'a sled::transaction::TransactionalTree,
-        objlbl: &'a sled::transaction::TransactionalTree,
-        objilbl: &'a sled::transaction::TransactionalTree,
+        _lbl: &sled::transaction::TransactionalTree,
+        _ilbl: &sled::transaction::TransactionalTree,
+        _obj: &sled::transaction::TransactionalTree,
+        objlbl: &sled::transaction::TransactionalTree,
+        objilbl: &sled::transaction::TransactionalTree,
     ) -> std::prelude::v1::Result<Self::Output, Self::Error> {
-        let groups = self.groups.take();
+        let groups = self
+            .groups
+            .try_borrow()
+            .map_err(|e| {
+                sled::transaction::UnabortableTransactionError::Storage(sled::Error::Unsupported(
+                    e.to_string(),
+                ))
+            })?
+            .clone();
 
         let mut group_results = vec![];
         for group in groups {

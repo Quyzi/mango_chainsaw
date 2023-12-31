@@ -1,3 +1,5 @@
+use std::cell::BorrowError;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,6 +21,9 @@ pub enum TransactionError {
 
     #[error("sled transaction error: {0}")]
     SledUnabortableError(#[from] sled::transaction::UnabortableTransactionError),
+
+    #[error("borrow error: {0}")]
+    BorrowError(#[from] BorrowError),
 
     #[error("anyhow error: {0}")]
     Anyhow(#[from] anyhow::Error),
